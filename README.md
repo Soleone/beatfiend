@@ -1,32 +1,73 @@
-# React + TypeScript + Vite
+# Flow Fight
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Flow Fight is a local-first rhythm/parry prototype. Projectiles travel down five colored lanes and should hit their pads on musical events. The current focus is fast iteration on game feel: timing windows, pad/cannon feedback, imported songs, generated/manual beatmaps, and rhythm-game scoring feedback.
 
-Currently, two official plugins are available:
+## Current controls
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- `Space` — kick lane
+- `W` — snare lane
+- `Left Arrow` — low melody lane
+- `Up Arrow` — mid melody lane
+- `Right Arrow` — high melody lane
 
-## React Compiler
+## Quickstart
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Install dependencies:
 
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm install
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+Run the full local tool, including the React app and local import/save server:
+
+```bash
+npm run dev:all
+```
+
+Open the Vite URL, usually:
+
+```txt
+http://localhost:5173
+```
+
+## Local YouTube import
+
+YouTube import is local/dev-only. It shells out to:
+
+- `yt-dlp`
+- `ffmpeg`
+- `ffprobe`
+
+Install them first, for example:
+
+```bash
+sudo apt install ffmpeg yt-dlp
+```
+
+Then use the **Import** tab to paste a YouTube URL. Imported songs are cached under:
+
+```txt
+public/imports/<songId>/
+  audio.mp3
+  source.webm
+  meta.json
+  beatmap.json
+  beatmaps/
+```
+
+Re-importing the same URL reuses the cached song instead of downloading it again.
+
+## App tabs
+
+- **Play** — player controls, stats, and minimal options.
+- **Edit** — shared player, beatmap selector/saver, jam recorder, timeline.
+- **Import** — YouTube import.
+- **Debug** — raw timing/debug controls.
+
+## Build
+
+```bash
+npm run build
+```
+
+The current bundle is large because React Three Fiber / Drei / Three.js are bundled together. That is acceptable for this prototype.

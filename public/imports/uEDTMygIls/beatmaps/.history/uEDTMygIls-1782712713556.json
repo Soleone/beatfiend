@@ -1,0 +1,345 @@
+{
+  "id": "uEDTMygIls",
+  "title": "130bpm",
+  "generatedAt": "2026-06-29T02:57:38.586Z",
+  "kind": "frequency-band-onsets-v1",
+  "durationMs": 93231,
+  "lanes": [
+    "kick",
+    "snare",
+    "left",
+    "down",
+    "right"
+  ],
+  "controls": {
+    "kick": "Space",
+    "snare": "W",
+    "left": "ArrowLeft",
+    "down": "ArrowDown",
+    "right": "ArrowRight"
+  },
+  "notes": [
+    {
+      "id": "uEDTMygIls-0",
+      "impactTimeMs": 1207,
+      "lane": "kick",
+      "strength": 1,
+      "source": "low-band"
+    },
+    {
+      "id": "uEDTMygIls-1",
+      "impactTimeMs": 1300,
+      "lane": "snare",
+      "strength": 1,
+      "source": "snare-band"
+    },
+    {
+      "id": "uEDTMygIls-2",
+      "impactTimeMs": 1393,
+      "lane": "high",
+      "strength": 1,
+      "source": "high-band"
+    },
+    {
+      "id": "uEDTMygIls-3",
+      "impactTimeMs": 1486,
+      "lane": "kick",
+      "strength": 1,
+      "source": "low-band"
+    },
+    {
+      "id": "uEDTMygIls-4",
+      "impactTimeMs": 1579,
+      "lane": "snare",
+      "strength": 1,
+      "source": "snare-band"
+    },
+    {
+      "id": "uEDTMygIls-5",
+      "impactTimeMs": 1672,
+      "lane": "high",
+      "strength": 1,
+      "source": "high-band"
+    },
+    {
+      "id": "uEDTMygIls-6",
+      "impactTimeMs": 1765,
+      "lane": "kick",
+      "strength": 1,
+      "source": "low-band"
+    },
+    {
+      "id": "uEDTMygIls-7",
+      "impactTimeMs": 1858,
+      "lane": "snare",
+      "strength": 1,
+      "source": "snare-band"
+    },
+    {
+      "id": "uEDTMygIls-8",
+      "impactTimeMs": 1950,
+      "lane": "high",
+      "strength": 1,
+      "source": "high-band"
+    },
+    {
+      "id": "uEDTMygIls-9",
+      "impactTimeMs": 2090,
+      "lane": "high",
+      "strength": 1,
+      "source": "high-band"
+    },
+    {
+      "id": "uEDTMygIls-10",
+      "impactTimeMs": 2229,
+      "lane": "high",
+      "strength": 1,
+      "source": "high-band"
+    },
+    {
+      "id": "uEDTMygIls-11",
+      "impactTimeMs": 2322,
+      "lane": "kick",
+      "strength": 1,
+      "source": "low-band"
+    },
+    {
+      "id": "uEDTMygIls-12",
+      "impactTimeMs": 2554,
+      "lane": "kick",
+      "strength": 1,
+      "source": "low-band"
+    },
+    {
+      "id": "uEDTMygIls-13",
+      "impactTimeMs": 3019,
+      "lane": "kick",
+      "strength": 1,
+      "source": "low-band"
+    },
+    {
+      "id": "uEDTMygIls-14",
+      "impactTimeMs": 7848,
+      "lane": "kick",
+      "strength": 1,
+      "source": "low-band"
+    },
+    {
+      "id": "uEDTMygIls-15",
+      "impactTimeMs": 11517,
+      "lane": "kick",
+      "strength": 1,
+      "source": "low-band"
+    },
+    {
+      "id": "uEDTMygIls-16",
+      "impactTimeMs": 17043,
+      "lane": "kick",
+      "strength": 1,
+      "source": "low-band"
+    },
+    {
+      "id": "uEDTMygIls-17",
+      "impactTimeMs": 17879,
+      "lane": "kick",
+      "strength": 1,
+      "source": "low-band"
+    },
+    {
+      "id": "uEDTMygIls-18",
+      "impactTimeMs": 18251,
+      "lane": "kick",
+      "strength": 1,
+      "source": "low-band"
+    },
+    {
+      "id": "uEDTMygIls-19",
+      "impactTimeMs": 18901,
+      "lane": "kick",
+      "strength": 1,
+      "source": "low-band"
+    },
+    {
+      "id": "uEDTMygIls-20",
+      "impactTimeMs": 19737,
+      "lane": "kick",
+      "strength": 1,
+      "source": "low-band"
+    },
+    {
+      "id": "uEDTMygIls-21",
+      "impactTimeMs": 20062,
+      "lane": "kick",
+      "strength": 1,
+      "source": "low-band"
+    },
+    {
+      "id": "uEDTMygIls-22",
+      "impactTimeMs": 20759,
+      "lane": "kick",
+      "strength": 1,
+      "source": "low-band"
+    },
+    {
+      "id": "uEDTMygIls-23",
+      "impactTimeMs": 22616,
+      "lane": "kick",
+      "strength": 1,
+      "source": "low-band"
+    },
+    {
+      "id": "uEDTMygIls-24",
+      "impactTimeMs": 23406,
+      "lane": "kick",
+      "strength": 1,
+      "source": "low-band"
+    },
+    {
+      "id": "uEDTMygIls-25",
+      "impactTimeMs": 23777,
+      "lane": "kick",
+      "strength": 1,
+      "source": "low-band"
+    },
+    {
+      "id": "uEDTMygIls-26",
+      "impactTimeMs": 24474,
+      "lane": "kick",
+      "strength": 1,
+      "source": "low-band"
+    },
+    {
+      "id": "uEDTMygIls-27",
+      "impactTimeMs": 25263,
+      "lane": "kick",
+      "strength": 1,
+      "source": "low-band"
+    },
+    {
+      "id": "uEDTMygIls-28",
+      "impactTimeMs": 26285,
+      "lane": "kick",
+      "strength": 1,
+      "source": "low-band"
+    },
+    {
+      "id": "uEDTMygIls-29",
+      "impactTimeMs": 27446,
+      "lane": "kick",
+      "strength": 1,
+      "source": "low-band"
+    },
+    {
+      "id": "uEDTMygIls-30",
+      "impactTimeMs": 29304,
+      "lane": "kick",
+      "strength": 1,
+      "source": "low-band"
+    },
+    {
+      "id": "uEDTMygIls-31",
+      "impactTimeMs": 30000,
+      "lane": "kick",
+      "strength": 1,
+      "source": "low-band"
+    },
+    {
+      "id": "uEDTMygIls-32",
+      "impactTimeMs": 30790,
+      "lane": "kick",
+      "strength": 1,
+      "source": "low-band"
+    },
+    {
+      "id": "uEDTMygIls-33",
+      "impactTimeMs": 32972,
+      "lane": "kick",
+      "strength": 1,
+      "source": "low-band"
+    },
+    {
+      "id": "uEDTMygIls-34",
+      "impactTimeMs": 33669,
+      "lane": "kick",
+      "strength": 1,
+      "source": "low-band"
+    },
+    {
+      "id": "uEDTMygIls-35",
+      "impactTimeMs": 35527,
+      "lane": "kick",
+      "strength": 1,
+      "source": "low-band"
+    },
+    {
+      "id": "uEDTMygIls-36",
+      "impactTimeMs": 42910,
+      "lane": "kick",
+      "strength": 1,
+      "source": "low-band"
+    },
+    {
+      "id": "uEDTMygIls-37",
+      "impactTimeMs": 57678,
+      "lane": "kick",
+      "strength": 1,
+      "source": "low-band"
+    },
+    {
+      "id": "uEDTMygIls-38",
+      "impactTimeMs": 63205,
+      "lane": "kick",
+      "strength": 1,
+      "source": "low-band"
+    },
+    {
+      "id": "uEDTMygIls-39",
+      "impactTimeMs": 63576,
+      "lane": "kick",
+      "strength": 1,
+      "source": "low-band"
+    },
+    {
+      "id": "uEDTMygIls-40",
+      "impactTimeMs": 64041,
+      "lane": "kick",
+      "strength": 1,
+      "source": "low-band"
+    },
+    {
+      "id": "uEDTMygIls-41",
+      "impactTimeMs": 69567,
+      "lane": "kick",
+      "strength": 1,
+      "source": "low-band"
+    },
+    {
+      "id": "uEDTMygIls-42",
+      "impactTimeMs": 72586,
+      "lane": "kick",
+      "strength": 1,
+      "source": "low-band"
+    },
+    {
+      "id": "uEDTMygIls-43",
+      "impactTimeMs": 73839,
+      "lane": "high",
+      "strength": 1,
+      "source": "high-band"
+    },
+    {
+      "id": "uEDTMygIls-44",
+      "impactTimeMs": 79830,
+      "lane": "kick",
+      "strength": 1,
+      "source": "low-band"
+    }
+  ],
+  "difficulty": 1,
+  "bpm": 120,
+  "songId": "uEDTMygIls",
+  "source": "manual",
+  "updatedAt": "2026-06-29T05:57:36.598Z",
+  "createdAt": "2026-06-29T05:57:36.598Z",
+  "version": 1
+}

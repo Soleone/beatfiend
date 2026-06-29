@@ -6,42 +6,33 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
 import { attackPhase, judgeParryTiming, type ParryTimingResult } from './game/timing'
 
-type Tuning = {
-  parryWindowMs: number
-  perfectWindowMs: number
-  telegraphMs: number
-  recoveryMs: number
-  inputOffsetMs: number
-}
+type Tuning = { parryWindowMs: number; perfectWindowMs: number; telegraphMs: number; recoveryMs: number; inputOffsetMs: number }
+type Attack = { id: number; startMs: number; impactMs: number; travelMs: number; lane?: BeatmapNote['lane']; durationMs?: number }
+type FeedbackEvent = { id: number; kind: 'good-parry' | 'perfect-parry' | 'miss'; startedAtMs: number; lane?: BeatmapNote['lane'] }
+type SavedBeatmap = { id: string; title: string; difficulty: number; updatedAt?: string; noteCount: number; url: string }
+type ImportResult = { id: string; title: string; durationMs: number; audioUrl: string; beatmapUrl: string; noteCount: number; sourceUrl?: string; cached?: boolean; beatmaps?: SavedBeatmap[] }
+type Lane = 'kick' | 'snare' | 'low' | 'mid' | 'high'
+type BeatmapNote = { id: string; impactTimeMs: number; rawTimeMs?: number; durationMs?: number; lane: Lane; strength: number; source: string; resolved?: boolean }
+type Beatmap = { id: string; songId?: string; title: string; difficulty?: number; version?: number; bpm?: number; durationMs: number; notes: BeatmapNote[] }
+type PlayStats = { hit: number; perfect: number; good: number; missed: number; streak: number; bestStreak: number }
 
-type Attack = {
-  id: number
-  startMs: number
-  impactMs: number
-  travelMs: number
-}
-
-type FeedbackEvent = {
-  id: number
-  kind: 'good-parry' | 'perfect-parry' | 'miss'
-  startedAtMs: number
-}
-
-const initialTuning: Tuning = {
-  parryWindowMs: 80,
-  perfectWindowMs: 40,
-  telegraphMs: 1150,
-  recoveryMs: 260,
-  inputOffsetMs: 0,
-}
-
+const initialTuning: Tuning = { parryWindowMs: 80, perfectWindowMs: 40, telegraphMs: 1150, recoveryMs: 260, inputOffsetMs: 0 }
 const clamp01 = (value: number) => Math.min(1, Math.max(0, value))
-const easeOut = (value: number) => 1 - Math.pow(1 - value, 3)
+const laneY: Record<Lane, number> = { kick: -0.58, snare: -0.32, low: 0.18, mid: 0.48, high: 0.78 }
+const laneColor: Record<Lane, string> = {
+  kick: '#4da3ff',
+  snare: '#ff5570',
+  low: '#83ff70',
+  mid: '#b56cff',
+  high: '#ff9f43',
+}
+const laneKey: Record<Lane, string> = { kick: 'Space', snare: 'W', low: 'Left', mid: 'Up', high: 'Right' }
+const lanes = ['kick', 'snare', 'low', 'mid', 'high'] as const
+const keyLane: Record<string, Lane> = { Space: 'kick', KeyW: 'snare', ArrowLeft: 'low', ArrowUp: 'mid', ArrowRight: 'high' }
 
 function playParrySound(kind: FeedbackEvent['kind']) {
   const AudioContextClass = window.AudioContext || window.webkitAudioContext
   if (!AudioContextClass) return
-
   const audio = new AudioContextClass()
   const now = audio.currentTime
   const master = audio.createGain()
@@ -49,7 +40,6 @@ function playParrySound(kind: FeedbackEvent['kind']) {
   master.gain.exponentialRampToValueAtTime(kind === 'perfect-parry' ? 0.22 : 0.14, now + 0.01)
   master.gain.exponentialRampToValueAtTime(0.0001, now + 0.22)
   master.connect(audio.destination)
-
   const hit = audio.createOscillator()
   const hitGain = audio.createGain()
   hit.type = kind === 'perfect-parry' ? 'triangle' : 'square'
@@ -60,102 +50,118 @@ function playParrySound(kind: FeedbackEvent['kind']) {
   hit.connect(hitGain).connect(master)
   hit.start(now)
   hit.stop(now + 0.18)
-
-  if (kind === 'perfect-parry') {
-    const shimmer = audio.createOscillator()
-    const shimmerGain = audio.createGain()
-    shimmer.type = 'sine'
-    shimmer.frequency.setValueAtTime(2400, now + 0.02)
-    shimmer.frequency.exponentialRampToValueAtTime(3600, now + 0.16)
-    shimmerGain.gain.setValueAtTime(0.35, now + 0.02)
-    shimmerGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.2)
-    shimmer.connect(shimmerGain).connect(master)
-    shimmer.start(now + 0.02)
-    shimmer.stop(now + 0.22)
-  }
 }
 
-declare global {
-  interface Window {
-    webkitAudioContext?: typeof AudioContext
-  }
+declare global { interface Window { webkitAudioContext?: typeof AudioContext } }
+
+function normalizeLane(lane: unknown): Lane {
+  if (lane === 'left') return 'low'
+  if (lane === 'up' || lane === 'down') return 'mid'
+  if (lane === 'right') return 'high'
+  if (lane === 'kick' || lane === 'snare' || lane === 'low' || lane === 'mid' || lane === 'high') return lane
+  return 'mid'
 }
 
-function makeAttack(tuning: Tuning, delayMs = 500): Attack {
-  const startMs = performance.now() + delayMs
-  const variability = 0.72
-  const minTravelMs = Math.max(260, tuning.telegraphMs * (1 - variability))
-  const maxTravelMs = tuning.telegraphMs * (1 + variability)
-  const travelMs = minTravelMs + Math.random() * (maxTravelMs - minTravelMs)
-
-  return {
-    id: Math.random(),
-    startMs,
-    travelMs,
-    impactMs: startMs + travelMs,
-  }
+function normalizeBeatmap(beatmap: Beatmap): Beatmap {
+  return { ...beatmap, notes: beatmap.notes.map((note) => ({ ...note, lane: normalizeLane(note.lane) })) }
 }
 
-function Arena({ attack, tuning, lastResult, parryPulse, feedback, onPhaseChange }: { attack: Attack; tuning: Tuning; lastResult: ParryTimingResult | null; parryPulse: number; feedback: FeedbackEvent | null; onPhaseChange: (phase: string) => void }) {
-  const attacker = useRef<Mesh>(null)
-  const player = useRef<Mesh>(null)
+function makeBeatmapAttack(timeUntilImpactMs: number, lane: BeatmapNote['lane'], durationMs?: number): Attack {
+  const now = performance.now()
+  const travelMs = Math.max(120, timeUntilImpactMs)
+  return { id: Math.random(), startMs: now, travelMs, impactMs: now + travelMs, lane, durationMs } as Attack
+}
+
+function makeIdlePattern(): Attack[] {
+  const now = performance.now()
+  const beatMs = 520
+  const firstImpactMs = 900
+  return [
+    { id: Math.random(), startMs: now, travelMs: firstImpactMs, impactMs: now + firstImpactMs, lane: 'kick' },
+    { id: Math.random(), startMs: now + beatMs, travelMs: firstImpactMs, impactMs: now + firstImpactMs + beatMs, lane: 'snare' },
+    { id: Math.random(), startMs: now + beatMs * 2, travelMs: firstImpactMs, impactMs: now + firstImpactMs + beatMs * 2, lane: 'kick' },
+    { id: Math.random(), startMs: now + beatMs * 3, travelMs: firstImpactMs, impactMs: now + firstImpactMs + beatMs * 3, lane: 'snare' },
+  ]
+}
+
+function ProjectileVisual({ attack, hidden }: { attack: Attack; hidden: boolean }) {
   const projectile = useRef<Mesh>(null)
-  const trailGhosts = useRef<Array<Mesh | null>>([])
-  const impactFlash = useRef<Mesh>(null)
-  const parryShield = useRef<Mesh>(null)
-  const shieldBoard = useRef<Mesh>(null)
-  const shieldBoardMaterial = useRef<MeshStandardMaterial>(null)
-  const burst = useRef<Group>(null)
+  const ghosts = useRef<Array<Mesh | null>>([])
+  const lane = attack.lane ?? 'mid'
+  const color = laneColor[lane]
+  const isHold = (attack.durationMs ?? 0) >= 200
 
   useFrame(() => {
     const now = performance.now()
-    const currentPhase = attackPhase(now, attack.startMs, attack.impactMs, tuning.recoveryMs)
-    onPhaseChange(currentPhase === 'windup' ? 'incoming' : currentPhase)
-
-    const travel = clamp01((now - attack.startMs) / attack.travelMs)
-    const impactAge = now - attack.impactMs
-    const parryAge = now - parryPulse
-    const feedbackAge = feedback ? now - feedback.startedAtMs : Number.POSITIVE_INFINITY
-    const isSuccessfulParry = feedback?.kind === 'good-parry' || feedback?.kind === 'perfect-parry'
     const startX = 1.6
     const shieldRightEdgeX = -0.96
     const projectileRadius = 0.09
-    // Zero point is first visible contact: projectile leading edge touches shield face.
-    // Since the projectile travels left, its leading edge is centerX - radius.
     const impactX = shieldRightEdgeX + projectileRadius
+    const travel = clamp01((now - attack.startMs) / attack.travelMs)
     const x = startX + (impactX - startX) * travel
-    const y = 0.16 + Math.sin(travel * Math.PI) * 0.12
-
-    if (attacker.current) {
-      const charge = now < attack.startMs ? clamp01(1 - (attack.startMs - now) / 500) : 1
-      attacker.current.scale.setScalar(1 + Math.sin(charge * Math.PI) * 0.12)
-    }
+    const y = laneY[lane]
+    const impactAge = now - attack.impactMs
 
     if (projectile.current) {
-      if (feedback?.kind === 'perfect-parry' && feedbackAge < 420) {
-        const reflect = easeOut(clamp01(feedbackAge / 420))
-        projectile.current.position.x = -0.78 + reflect * 1.85
-        projectile.current.position.y = 0.16 + Math.sin(reflect * Math.PI) * 0.22
-        projectile.current.scale.setScalar(1)
-        projectile.current.visible = true
-      } else {
-        projectile.current.position.x = x
-        projectile.current.position.y = y
-        projectile.current.scale.setScalar(1)
-        projectile.current.visible = now >= attack.startMs && impactAge < 120 && !(isSuccessfulParry && feedbackAge < 420)
-      }
-      projectile.current.rotation.z = 0
+      projectile.current.position.x = x
+      projectile.current.position.y = y
+      projectile.current.visible = !hidden && now >= attack.startMs && impactAge < 120
     }
 
-    trailGhosts.current.forEach((ghost, index) => {
+    ghosts.current.forEach((ghost, index) => {
       if (!ghost) return
       const lagMs = 55 * (index + 1)
       const ghostTravel = clamp01((now - lagMs - attack.startMs) / attack.travelMs)
-      const ghostX = startX + (impactX - startX) * ghostTravel
-      const ghostY = 0.16 + Math.sin(ghostTravel * Math.PI) * 0.12
-      ghost.position.x = ghostX
-      ghost.position.y = ghostY
-      ghost.visible = now >= attack.startMs + lagMs && impactAge < 40 && !isSuccessfulParry
+      ghost.position.x = startX + (impactX - startX) * ghostTravel
+      ghost.position.y = laneY[lane]
+      ghost.visible = !hidden && now >= attack.startMs + lagMs && impactAge < 40
+    })
+  })
+
+  return (
+    <>
+      {[0.22, 0.14, 0.08].map((opacity, index) => (
+        <mesh key={opacity} ref={(mesh) => { ghosts.current[index] = mesh }} visible={false} position={[1.6, laneY[lane], 0.06]}>
+          <sphereGeometry args={[(isHold ? 0.15 : 0.09) - index * 0.014, 24, 12]} />
+          <meshStandardMaterial color={color} emissive={color} transparent opacity={opacity} />
+        </mesh>
+      ))}
+      <mesh ref={projectile} position={[1.6, laneY[lane], 0.12]} visible={false}>
+        <sphereGeometry args={[isHold ? 0.18 : 0.09, 32, 16]} />
+        <meshStandardMaterial color={color} emissive={color} />
+      </mesh>
+    </>
+  )
+}
+
+function Arena({ attacks, tuning, parryPulse, feedback, padTriggers, onPhaseChange }: { attacks: Attack[]; tuning: Tuning; parryPulse: number; feedback: FeedbackEvent | null; padTriggers: Record<Lane, number>; onPhaseChange: (phase: string) => void }) {
+  const impactFlash = useRef<Mesh>(null)
+  const cannonRefs = useRef<Partial<Record<BeatmapNote['lane'], Group | null>>>({})
+  const parryShield = useRef<Mesh>(null)
+  const padRefs = useRef<Partial<Record<BeatmapNote['lane'], Mesh | null>>>({})
+  const padMaterials = useRef<Partial<Record<BeatmapNote['lane'], MeshStandardMaterial | null>>>({})
+  const burst = useRef<Group>(null)
+  const primaryAttack = attacks[0]
+
+  useFrame(() => {
+    const now = performance.now()
+    const attack = primaryAttack
+    onPhaseChange(attack ? (attackPhase(now, attack.startMs, attack.impactMs, tuning.recoveryMs) === 'windup' ? 'incoming' : attackPhase(now, attack.startMs, attack.impactMs, tuning.recoveryMs)) : 'queued')
+
+    const impactAge = attack ? now - attack.impactMs : Number.POSITIVE_INFINITY
+    const parryAge = now - parryPulse
+    const feedbackAge = feedback ? now - feedback.startedAtMs : Number.POSITIVE_INFINITY
+    const isSuccessfulParry = feedback?.kind === 'good-parry' || feedback?.kind === 'perfect-parry'
+
+    Object.entries(laneColor).forEach(([lane]) => {
+      const typedLane = lane as BeatmapNote['lane']
+      const latestShot = attacks
+        .filter((candidate) => (candidate.lane ?? 'mid') === typedLane && now >= candidate.startMs)
+        .sort((a, b) => b.startMs - a.startMs)[0]
+      const shotAge = latestShot ? now - latestShot.startMs : Number.POSITIVE_INFINITY
+      const trigger = shotAge >= 0 && shotAge < 130 ? Math.sin((1 - shotAge / 130) * Math.PI) : 0
+      const cannon = cannonRefs.current[typedLane]
+      if (cannon) cannon.position.x = 1.55 - trigger * 0.075
     })
 
     if (impactFlash.current) {
@@ -163,8 +169,8 @@ function Arena({ attack, tuning, lastResult, parryPulse, feedback, onPhaseChange
       const flash = visible ? 1 - impactAge / 130 : 0
       impactFlash.current.scale.setScalar(0.45 + flash * 1.8)
       impactFlash.current.visible = visible
+      impactFlash.current.position.y = attack ? laneY[attack.lane ?? 'mid'] : 0.06
     }
-
     if (parryShield.current) {
       const duration = feedback?.kind === 'perfect-parry' ? 360 : 210
       const visible = parryAge >= 0 && parryAge < duration
@@ -174,24 +180,29 @@ function Arena({ attack, tuning, lastResult, parryPulse, feedback, onPhaseChange
     }
 
     const shieldFlashDurationMs = 200
-    const shieldFlash = feedbackAge < shieldFlashDurationMs && isSuccessfulParry
-      ? Math.pow(Math.max(0, Math.sin((feedbackAge / shieldFlashDurationMs) * Math.PI * 4)), 0.35) * (1 - feedbackAge / shieldFlashDurationMs * 0.35)
-      : 0
-
-    if (shieldBoard.current) {
-      shieldBoard.current.scale.y = 1 + shieldFlash * 0.2
-      shieldBoard.current.scale.x = 1 + shieldFlash * 0.08
-    }
-
-    if (shieldBoardMaterial.current) {
-      const baseColor = new Color('#d9ecff')
-      const flashColor = new Color(feedback?.kind === 'perfect-parry' ? '#fff4a3' : '#ffd166')
-      const baseEmissive = new Color('#16324c')
-      const flashEmissive = new Color(feedback?.kind === 'perfect-parry' ? '#ffdd00' : '#ff9500')
-      shieldBoardMaterial.current.color.copy(baseColor.lerp(flashColor, shieldFlash))
-      shieldBoardMaterial.current.emissive.copy(baseEmissive.lerp(flashEmissive, shieldFlash))
-    }
-
+    const shieldFlash = feedbackAge < shieldFlashDurationMs && isSuccessfulParry ? Math.pow(Math.max(0, Math.sin((feedbackAge / shieldFlashDurationMs) * Math.PI * 4)), 0.35) * (1 - feedbackAge / shieldFlashDurationMs * 0.35) : 0
+    Object.entries(laneColor).forEach(([lane, color]) => {
+      const typedLane = lane as BeatmapNote['lane']
+      const isHitLane = feedback?.lane === typedLane
+      const padFlash = isHitLane ? shieldFlash : 0
+      const pad = padRefs.current[typedLane]
+      const material = padMaterials.current[typedLane]
+      const triggerAge = now - (padTriggers[typedLane] || -Infinity)
+      const trigger = triggerAge >= 0 && triggerAge < 130 ? Math.sin((1 - triggerAge / 130) * Math.PI) : 0
+      if (pad) {
+        pad.position.x = -1.02 + trigger * 0.075
+        pad.scale.y = 1 + padFlash * 0.18
+        pad.scale.x = 1 + padFlash * 0.12
+      }
+      if (material) {
+        const baseColor = new Color(color)
+        const flashColor = new Color(feedback?.kind === 'perfect-parry' ? '#fff4a3' : '#ffd166')
+        const baseEmissive = new Color(color).multiplyScalar(0.35)
+        const flashEmissive = new Color(feedback?.kind === 'perfect-parry' ? '#ffdd00' : '#ff9500')
+        material.color.copy(baseColor.lerp(flashColor, padFlash))
+        material.emissive.copy(baseEmissive.lerp(flashEmissive, padFlash))
+      }
+    })
     if (burst.current) {
       const visible = feedbackAge >= 0 && feedbackAge < 360 && isSuccessfulParry
       const pulse = visible ? 1 - feedbackAge / 360 : 0
@@ -199,176 +210,375 @@ function Arena({ attack, tuning, lastResult, parryPulse, feedback, onPhaseChange
       burst.current.scale.setScalar((feedback?.kind === 'perfect-parry' ? 1.0 : 0.72) * (0.18 + (1 - pulse) * 1.25))
       burst.current.rotation.z = feedbackAge / 150
     }
-
-    if (player.current) {
-      const recoil = impactAge >= 0 && impactAge < 120 ? (1 - impactAge / 120) * 0.08 : 0
-      const shake = feedbackAge < 140 ? Math.sin(feedbackAge * 0.8) * (feedback?.kind === 'perfect-parry' ? 0.032 : 0.016) * (1 - feedbackAge / 140) : 0
-      player.current.position.x = -1.35 - recoil + shake
-    }
   })
-
-  const resultColor = lastResult?.success ? (lastResult.grade === 'perfect' ? '#7df9ff' : '#83ff70') : '#ff5570'
 
   return (
     <>
       <color attach="background" args={["#070812"]} />
       <ambientLight intensity={0.85} />
       <directionalLight position={[0, 4, 5]} intensity={2.5} />
-
-      <mesh position={[0, -1.05, 0]}>
-        <boxGeometry args={[6.2, 0.08, 1.4]} />
-        <meshStandardMaterial color="#1d2540" />
-      </mesh>
-
-      <mesh ref={player} position={[-1.35, 0, 0]}>
-        <capsuleGeometry args={[0.28, 0.9, 8, 18]} />
-        <meshStandardMaterial color="#4da3ff" emissive="#061f40" />
-      </mesh>
-      <mesh ref={shieldBoard} position={[-1.02, 0.04, 0.11]}>
-        <boxGeometry args={[0.12, 1.05, 0.12]} />
-        <meshStandardMaterial ref={shieldBoardMaterial} color="#d9ecff" emissive="#16324c" />
-      </mesh>
-      <mesh ref={parryShield} position={[-0.98, 0.05, 0.16]} visible={false}>
-        <torusGeometry args={[0.5, 0.035, 12, 48]} />
-        <meshStandardMaterial color="#7df9ff" emissive="#2de8ff" transparent opacity={0.9} />
-      </mesh>
-
-      <mesh ref={attacker} position={[1.85, 0, 0]}>
-        <capsuleGeometry args={[0.3, 0.95, 8, 18]} />
-        <meshStandardMaterial color="#ff4d67" emissive="#3b0810" />
-      </mesh>
-      <mesh position={[1.47, 0.16, 0.02]}>
-        <boxGeometry args={[0.42, 0.12, 0.08]} />
-        <meshStandardMaterial color="#ff4d67" emissive="#3b0810" />
-      </mesh>
-
-      {/* The projectile is the attack, not a helper UI: its contact with the shield is the impact. */}
-      {[0.28, 0.18, 0.1, 0.05].map((opacity, index) => (
-        <mesh
-          key={opacity}
-          ref={(mesh) => { trailGhosts.current[index] = mesh }}
-          position={[1.6, 0.16, 0.06]}
-          visible={false}
-        >
-          <sphereGeometry args={[0.09 - index * 0.012, 24, 12]} />
-          <meshStandardMaterial color="#d8f3ff" emissive="#3aa8ff" transparent opacity={opacity} />
-        </mesh>
-      ))}
-      <mesh ref={projectile} position={[1.6, 0.16, 0.12]} visible={false}>
-        <sphereGeometry args={[0.09, 32, 16]} />
-        <meshStandardMaterial color="#ffd166" emissive="#704900" />
-      </mesh>
-
-      <mesh ref={impactFlash} position={[-0.98, 0.06, 0.18]} visible={false}>
-        <ringGeometry args={[0.24, 0.29, 48]} />
-        <meshStandardMaterial color="#fff1b8" emissive="#ffd166" transparent opacity={0.95} />
-      </mesh>
-
-      <group ref={burst} position={[-0.98, 0.06, 0.22]} visible={false}>
-        <mesh>
-          <ringGeometry args={[0.18, 0.22, 64]} />
-          <meshStandardMaterial color={feedback?.kind === 'perfect-parry' ? '#ffffff' : '#7df9ff'} emissive={feedback?.kind === 'perfect-parry' ? '#7df9ff' : '#2de8ff'} transparent opacity={0.62} />
-        </mesh>
-        <mesh rotation={[0, 0, Math.PI / 4]}>
-          <boxGeometry args={[0.48, 0.028, 0.035]} />
-          <meshStandardMaterial color={feedback?.kind === 'perfect-parry' ? '#ffffff' : '#83ff70'} emissive="#7df9ff" transparent opacity={0.55} />
-        </mesh>
-        <mesh rotation={[0, 0, -Math.PI / 4]}>
-          <boxGeometry args={[0.48, 0.028, 0.035]} />
-          <meshStandardMaterial color={feedback?.kind === 'perfect-parry' ? '#ffffff' : '#83ff70'} emissive="#7df9ff" transparent opacity={0.55} />
-        </mesh>
+      <mesh position={[0, -0.92, 0]}><boxGeometry args={[6.2, 0.04, 1.4]} /><meshStandardMaterial color="#1d2540" /></mesh>
+      {Object.entries(laneColor).map(([lane, color]) => {
+        const typedLane = lane as BeatmapNote['lane']
+        return (
+          <group key={lane}>
+            <mesh ref={(mesh) => { padRefs.current[typedLane] = mesh }} position={[-1.02, laneY[typedLane], 0.11]}>
+              <boxGeometry args={[0.065, 0.18, 0.12]} />
+              <meshStandardMaterial ref={(material) => { padMaterials.current[typedLane] = material }} color={color} emissive={color} />
+            </mesh>
+            <Text position={[-1.23, laneY[typedLane] - 0.01, 0.12]} fontSize={0.08} color="#edf3ff" anchorX="center">{laneKey[typedLane]}</Text>
+          </group>
+        )
+      })}
+      <mesh ref={parryShield} position={[-0.98, laneY[feedback?.lane ?? 'mid'], 0.16]} visible={false}><torusGeometry args={[0.18, 0.018, 12, 48]} /><meshStandardMaterial color="#7df9ff" emissive="#2de8ff" transparent opacity={0.9} /></mesh>
+      {Object.entries(laneColor).map(([lane, color]) => {
+        const typedLane = lane as BeatmapNote['lane']
+        return (
+          <group key={`cannon-${lane}`} ref={(group) => { cannonRefs.current[typedLane] = group }} position={[1.55, laneY[typedLane], 0.08]}>
+            <mesh><boxGeometry args={[0.23, 0.16, 0.11]} /><meshStandardMaterial color={color} emissive={color} /></mesh>
+          </group>
+        )
+      })}
+      {attacks.map((attack) => <ProjectileVisual key={attack.id} attack={attack} hidden={false} />)}
+      <mesh ref={impactFlash} position={[-0.98, 0.06, 0.18]} visible={false}><ringGeometry args={[0.12, 0.15, 48]} /><meshStandardMaterial color="#fff1b8" emissive="#ffd166" transparent opacity={0.95} /></mesh>
+      <group ref={burst} position={[-0.98, laneY[feedback?.lane ?? 'mid'], 0.22]} visible={false}>
+        <mesh><ringGeometry args={[0.18, 0.22, 64]} /><meshStandardMaterial color={feedback?.kind === 'perfect-parry' ? '#ffffff' : '#7df9ff'} emissive={feedback?.kind === 'perfect-parry' ? '#7df9ff' : '#2de8ff'} transparent opacity={0.62} /></mesh>
+        <mesh rotation={[0, 0, Math.PI / 4]}><boxGeometry args={[0.48, 0.028, 0.035]} /><meshStandardMaterial color={feedback?.kind === 'perfect-parry' ? '#ffffff' : '#83ff70'} emissive="#7df9ff" transparent opacity={0.55} /></mesh>
+        <mesh rotation={[0, 0, -Math.PI / 4]}><boxGeometry args={[0.48, 0.028, 0.035]} /><meshStandardMaterial color={feedback?.kind === 'perfect-parry' ? '#ffffff' : '#83ff70'} emissive="#7df9ff" transparent opacity={0.55} /></mesh>
       </group>
-
-      {lastResult && (
-        <Text position={[0, 1.12, 0]} fontSize={0.23} color={resultColor} anchorX="center">
-          {lastResult.grade.toUpperCase()} {lastResult.deltaMs.toFixed(1)}ms
-        </Text>
-      )}
     </>
   )
 }
 
 function App() {
   const [tuning, setTuning] = useState<Tuning>(initialTuning)
-  const [attack, setAttack] = useState(() => makeAttack(initialTuning))
+  const [activeAttacks, setActiveAttacks] = useState<Attack[]>(() => makeIdlePattern())
   const [lastResult, setLastResult] = useState<ParryTimingResult | null>(null)
+  const [lastAutoMiss, setLastAutoMiss] = useState(false)
   const [parryPulse, setParryPulse] = useState(0)
   const [feedback, setFeedback] = useState<FeedbackEvent | null>(null)
   const [phase, setPhase] = useState('queued')
+  const [youtubeUrl, setYoutubeUrl] = useState('')
+  const [importStatus, setImportStatus] = useState('')
+  const [importedSong, setImportedSong] = useState<ImportResult | null>(null)
+  const [beatmap, setBeatmap] = useState<Beatmap | null>(null)
+  const [savedImports, setSavedImports] = useState<ImportResult[]>([])
+  const [isSongPlaying, setIsSongPlaying] = useState(false)
+  const [armedLanes, setArmedLanes] = useState<Set<BeatmapNote['lane']>>(() => new Set(['kick', 'snare']))
+  const [recordMode, setRecordMode] = useState<'add' | 'replace'>('add')
+  const [isRecording, setIsRecording] = useState(false)
+  const [recordStartMs, setRecordStartMs] = useState(0)
+  const [recordedNotes, setRecordedNotes] = useState<BeatmapNote[]>([])
+  const [songBeatmaps, setSongBeatmaps] = useState<SavedBeatmap[]>([])
+  const [mapTitle, setMapTitle] = useState('My beatmap')
+  const [difficulty, setDifficulty] = useState(1)
+  const [stats, setStats] = useState<PlayStats>({ hit: 0, perfect: 0, good: 0, missed: 0, streak: 0, bestStreak: 0 })
+  const [songTimeMs, setSongTimeMs] = useState(0)
+  const [activeTab, setActiveTab] = useState<'play' | 'edit' | 'import' | 'debug'>('play')
+  const [bpm, setBpm] = useState(120)
+  const [tapTimes, setTapTimes] = useState<number[]>([])
+  const [tapMode, setTapMode] = useState(false)
+  const [quantize, setQuantize] = useState(true)
+  const [padTriggers, setPadTriggers] = useState<Record<Lane, number>>({ kick: 0, snare: 0, low: 0, mid: 0, high: 0 })
+  const audioRef = useRef<HTMLAudioElement>(null)
+  const scheduledNoteIds = useRef(new Set<string>())
+  const heldStarts = useRef<Partial<Record<Lane, number>>>({})
+
+  const loadImports = useCallback(async () => {
+    try {
+      const response = await fetch('/api/imports')
+      const data = await response.json()
+      setSavedImports(data.imports ?? [])
+    } catch {
+      // Import server is optional during plain Vite dev.
+    }
+  }, [])
+
+  const loadImport = useCallback(async (song: ImportResult) => {
+    setImportedSong(song)
+    const beatmapResponse = await fetch(song.beatmapUrl)
+    const loadedBeatmap = await beatmapResponse.json()
+    setBeatmap(normalizeBeatmap(loadedBeatmap))
+    setMapTitle(loadedBeatmap.title ?? song.title)
+    setDifficulty(loadedBeatmap.difficulty ?? 1)
+    setBpm(loadedBeatmap.bpm ?? 120)
+    setSongBeatmaps(song.beatmaps ?? [])
+    scheduledNoteIds.current.clear()
+    setImportStatus(`Loaded ${song.noteCount} notes from cache`)
+  }, [])
+
+  useEffect(() => { void loadImports() }, [loadImports])
+
+  const quantizeTime = useCallback((rawTimeMs: number) => {
+    if (!quantize) return rawTimeMs
+    const gridMs = 60000 / bpm / 2 // eighth notes for now
+    const snapped = Math.round(rawTimeMs / gridMs) * gridMs
+    return Math.abs(snapped - rawTimeMs) <= 95 ? snapped : rawTimeMs
+  }, [bpm, quantize])
 
   const nextAttack = useCallback(() => {
-    setLastResult(null)
-    setFeedback(null)
-    setAttack(makeAttack(tuning))
+    setLastResult(null); setLastAutoMiss(false); setFeedback(null); scheduledNoteIds.current.clear(); setActiveAttacks(makeIdlePattern())
   }, [tuning])
 
-  const parry = useCallback(() => {
+  const parry = useCallback((lane: BeatmapNote['lane'] = 'mid') => {
     const inputTimeMs = performance.now()
-    const result = judgeParryTiming({ inputTimeMs, impactTimeMs: attack.impactMs, ...tuning })
-    setLastResult(result)
-    setParryPulse(inputTimeMs)
+    const laneAttacks = activeAttacks.filter((attack) => (attack.lane ?? 'mid') === lane)
+    const target = laneAttacks.reduce<Attack | null>((best, attack) => !best || Math.abs(attack.impactMs - inputTimeMs) < Math.abs(best.impactMs - inputTimeMs) ? attack : best, null)
+    if (!target) return
+    const result = judgeParryTiming({ inputTimeMs, impactTimeMs: target.impactMs, ...tuning })
+    setLastResult(result); setLastAutoMiss(false); setParryPulse(inputTimeMs)
     const kind: FeedbackEvent['kind'] = result.success ? (result.grade === 'perfect' ? 'perfect-parry' : 'good-parry') : 'miss'
-    setFeedback({ id: Math.random(), kind, startedAtMs: inputTimeMs })
-    playParrySound(kind)
-  }, [attack.impactMs, tuning])
+    setFeedback({ id: Math.random(), kind, startedAtMs: inputTimeMs, lane }); playParrySound(kind)
+    if (result.success) {
+      setStats((s) => ({ ...s, hit: s.hit + 1, perfect: s.perfect + (result.grade === 'perfect' ? 1 : 0), good: s.good + (result.grade === 'good' ? 1 : 0), streak: s.streak + 1, bestStreak: Math.max(s.bestStreak, s.streak + 1) }))
+      setActiveAttacks((attacks) => attacks.filter((attack) => attack.id !== target.id))
+    }
+  }, [activeAttacks, tuning])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.code === 'Space') {
+      const lane = keyLane[event.code]
+      if (lane) {
         event.preventDefault()
-        parry()
+        if (event.repeat) return
+        setPadTriggers((triggers) => ({ ...triggers, [lane]: performance.now() }))
+        if (tapMode) {
+          setTapTimes((times) => [...times.slice(-11), performance.now()])
+          return
+        }
+        if (isRecording && armedLanes.has(lane) && audioRef.current) {
+          const rawTimeMs = audioRef.current.currentTime * 1000
+          heldStarts.current[lane] = rawTimeMs
+        } else {
+          parry(lane)
+        }
       }
       if (event.code === 'KeyR') nextAttack()
     }
+    const onKeyUp = (event: KeyboardEvent) => {
+      const lane = keyLane[event.code]
+      if (!lane || !isRecording || tapMode || !armedLanes.has(lane) || !audioRef.current) return
+      const startMs = heldStarts.current[lane]
+      delete heldStarts.current[lane]
+      if (startMs === undefined) return
+      const rawEndMs = audioRef.current.currentTime * 1000
+      const rawDurationMs = Math.max(0, rawEndMs - startMs)
+      const impactTimeMs = quantizeTime(startMs)
+      const endTimeMs = quantizeTime(rawEndMs)
+      const durationMs = rawDurationMs >= 200 ? Math.max(200, endTimeMs - impactTimeMs) : undefined
+      setRecordedNotes((notes) => [...notes, { id: `manual-${Date.now()}-${notes.length}`, rawTimeMs: startMs, impactTimeMs, durationMs, lane, strength: 1, source: durationMs ? 'manual-hold' : quantize ? 'manual-quantized' : 'manual' }])
+    }
     window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [nextAttack, parry])
+    window.addEventListener('keyup', onKeyUp)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
+    }
+  }, [armedLanes, isRecording, nextAttack, parry, quantize, quantizeTime, tapMode])
 
   useEffect(() => {
     const timer = window.setInterval(() => {
-      if (performance.now() > attack.impactMs + tuning.recoveryMs + 700) nextAttack()
+      const now = performance.now()
+      setActiveAttacks((attacks) => {
+        const expired = attacks.filter((attack) => now >= attack.impactMs + tuning.parryWindowMs && now < attack.impactMs + tuning.recoveryMs + 700)
+        if (isSongPlaying && expired.length > 0) {
+          setStats((s) => ({ ...s, missed: s.missed + expired.length, streak: 0 }))
+          setLastResult(null)
+          setLastAutoMiss(true)
+        }
+        return attacks.filter((attack) => now < attack.impactMs + (isSongPlaying ? tuning.parryWindowMs : tuning.recoveryMs + 700))
+      })
+      if (!isSongPlaying && activeAttacks.length === 0) setActiveAttacks(makeIdlePattern())
     }, 100)
     return () => window.clearInterval(timer)
-  }, [attack.impactMs, nextAttack, tuning.recoveryMs])
+  }, [activeAttacks.length, isSongPlaying, tuning])
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const audio = audioRef.current
+      if (!audio || !beatmap || audio.paused) return
+      const songTimeMs = audio.currentTime * 1000
+      setSongTimeMs(songTimeMs)
+      const spawnLeadMs = tuning.telegraphMs
+      const dueNotes = beatmap.notes.filter((note) => {
+        const timeUntilImpactMs = note.impactTimeMs - songTimeMs
+        return !scheduledNoteIds.current.has(note.id) && timeUntilImpactMs > 0 && timeUntilImpactMs <= spawnLeadMs
+      }).slice(0, 6)
+      if (dueNotes.length === 0) return
+      dueNotes.forEach((note) => scheduledNoteIds.current.add(note.id))
+      setLastResult(null); setLastAutoMiss(false); setFeedback(null)
+      setActiveAttacks((attacks) => [...attacks, ...dueNotes.map((note) => makeBeatmapAttack(note.impactTimeMs - songTimeMs, note.lane, note.durationMs))].sort((a, b) => a.impactMs - b.impactMs).slice(0, 12))
+    }, 25)
+    return () => window.clearInterval(timer)
+  }, [beatmap, tuning.telegraphMs])
+
+  const importYoutube = useCallback(async () => {
+    const url = youtubeUrl.trim(); if (!url) return
+    setImportStatus('Importing with local yt-dlp…')
+    try {
+      const response = await fetch('/api/import-youtube', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) })
+      const data = await response.json(); if (!response.ok) throw new Error(data.error ?? 'Import failed')
+      await loadImport(data)
+      await loadImports()
+      setImportStatus(`${data.cached ? 'Loaded cached' : 'Imported'} ${data.noteCount} notes`)
+    } catch (error) { setImportStatus(error instanceof Error ? error.message : String(error)) }
+  }, [loadImport, loadImports, youtubeUrl])
+
+  const startRecording = useCallback(() => {
+    if (!audioRef.current) return
+    setRecordedNotes([])
+    setRecordStartMs(audioRef.current.currentTime * 1000)
+    setIsRecording(true)
+    void audioRef.current.play()
+  }, [])
+
+  const stopRecording = useCallback(() => {
+    const audio = audioRef.current
+    const recordEndMs = audio ? audio.currentTime * 1000 : recordStartMs
+    setIsRecording(false)
+    setBeatmap((current) => {
+      if (!current) return current
+      const armed = armedLanes
+      const kept = recordMode === 'replace'
+        ? current.notes.filter((note) => !(armed.has(note.lane) && note.impactTimeMs >= recordStartMs && note.impactTimeMs <= recordEndMs))
+        : current.notes
+      const merged = [...kept, ...recordedNotes]
+        .sort((a, b) => a.impactTimeMs - b.impactTimeMs)
+        .filter((note, index, all) => index === 0 || note.lane !== all[index - 1].lane || Math.abs(note.impactTimeMs - all[index - 1].impactTimeMs) > 45)
+      return { ...current, notes: merged }
+    })
+    scheduledNoteIds.current.clear()
+  }, [armedLanes, recordMode, recordStartMs, recordedNotes])
+
+  const saveBeatmap = useCallback(async (saveAsNew = false) => {
+    if (!beatmap || !importedSong) return
+    const id = saveAsNew ? `${mapTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}-${Date.now().toString(36)}` : beatmap.id
+    const editable = { ...beatmap, id, title: mapTitle, difficulty, bpm, songId: importedSong.id, source: 'manual' }
+    const response = await fetch(`/api/imports/${importedSong.id}/beatmaps`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ beatmap: editable }) })
+    const data = await response.json()
+    if (!response.ok) throw new Error(data.error ?? 'Save failed')
+    setBeatmap(normalizeBeatmap(data.beatmap))
+    setSongBeatmaps(data.beatmaps ?? [])
+    setImportStatus(`Saved ${data.beatmap.title} v${data.beatmap.version}`)
+  }, [beatmap, bpm, difficulty, importedSong, mapTitle])
+
+  const loadBeatmap = useCallback(async (mapId: string) => {
+    const map = songBeatmaps.find((item) => item.id === mapId)
+    if (!map) return
+    const response = await fetch(map.url)
+    const loaded = await response.json()
+    setBeatmap(normalizeBeatmap(loaded))
+    setMapTitle(loaded.title)
+    setDifficulty(loaded.difficulty ?? 1)
+    setBpm(loaded.bpm ?? 120)
+    scheduledNoteIds.current.clear()
+  }, [songBeatmaps])
+
+  const createBlankBeatmap = useCallback(() => {
+    if (!importedSong) return
+    const title = `${importedSong.title} custom`
+    setBeatmap({ id: `new-${Date.now().toString(36)}`, songId: importedSong.id, title, difficulty, bpm, durationMs: importedSong.durationMs, notes: [] })
+    setMapTitle(title)
+    setRecordedNotes([])
+    scheduledNoteIds.current.clear()
+  }, [bpm, difficulty, importedSong])
+
+  const clearBeatmapEvents = useCallback(() => {
+    setBeatmap((current) => current ? { ...current, notes: [] } : current)
+    setRecordedNotes([])
+    scheduledNoteIds.current.clear()
+  }, [])
+
+  const toggleAllLanes = useCallback(() => {
+    setArmedLanes((current) => current.size === lanes.length ? new Set() : new Set(lanes))
+  }, [])
+
+  const exportBeatmap = useCallback(() => {
+    if (!beatmap) return
+    const blob = new Blob([JSON.stringify({ ...beatmap, title: mapTitle, difficulty, bpm }, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${beatmap.id}-edited.beatmap.json`
+    link.click()
+    URL.revokeObjectURL(url)
+  }, [beatmap, bpm, difficulty, mapTitle])
+
+  const playSong = useCallback(() => { void audioRef.current?.play() }, [])
+  const pauseSong = useCallback(() => { audioRef.current?.pause() }, [])
+  const restartSong = useCallback(() => {
+    const audio = audioRef.current
+    if (!audio) return
+    audio.currentTime = 0
+    scheduledNoteIds.current.clear()
+    setActiveAttacks([])
+    setStats({ hit: 0, perfect: 0, good: 0, missed: 0, streak: 0, bestStreak: 0 })
+    setLastResult(null)
+    setLastAutoMiss(false)
+    void audio.play()
+  }, [])
 
   const rows = useMemo(() => [
-    ['Parry ±', tuning.parryWindowMs, 20, 260, 'ms', 'parryWindowMs'],
-    ['Perfect ±', tuning.perfectWindowMs, 10, 120, 'ms', 'perfectWindowMs'],
-    ['Avg travel', tuning.telegraphMs, 450, 2000, 'ms', 'telegraphMs'],
-    ['Input offset', tuning.inputOffsetMs, -80, 80, 'ms', 'inputOffsetMs'],
+    ['Parry ±', tuning.parryWindowMs, 20, 260, 'ms', 'parryWindowMs'], ['Perfect ±', tuning.perfectWindowMs, 10, 120, 'ms', 'perfectWindowMs'], ['Avg travel', tuning.telegraphMs, 450, 2000, 'ms', 'telegraphMs'], ['Input offset', tuning.inputOffsetMs, -80, 80, 'ms', 'inputOffsetMs'],
   ] as const, [tuning])
+  const currentAttack = activeAttacks[0]
+  const detectedBpm = useMemo(() => {
+    if (tapTimes.length < 2) return null
+    const intervals = tapTimes.slice(1).map((time, index) => time - tapTimes[index]).filter((value) => value > 120 && value < 2000)
+    if (intervals.length === 0) return null
+    const avg = intervals.reduce((sum, value) => sum + value, 0) / intervals.length
+    return Math.round((60000 / avg) * 10) / 10
+  }, [tapTimes])
+  const displayedBpm = tapMode && detectedBpm ? detectedBpm : bpm
+  const toggleTapBpm = useCallback(() => {
+    if (tapMode) {
+      if (detectedBpm) setBpm(Math.round(detectedBpm))
+      setTapMode(false)
+    } else {
+      setTapTimes([])
+      setTapMode(true)
+    }
+  }, [detectedBpm, tapMode])
+  const timelineNotes = useMemo(() => [
+    ...(beatmap?.notes.map((note) => ({ ...note, pending: false })) ?? []),
+    ...(isRecording ? recordedNotes.map((note) => ({ ...note, pending: true })) : []),
+  ], [beatmap?.notes, isRecording, recordedNotes])
+  const transport = <section className="importer"><h2>Player</h2>{savedImports.length > 0 && <select value={importedSong?.id ?? ''} onChange={(event) => { const song = savedImports.find((item) => item.id === event.target.value); if (song) void loadImport(song) }}><option value="">Select cached song…</option>{savedImports.map((song) => <option key={song.id} value={song.id}>{song.title}</option>)}</select>}{importedSong ? <>{songBeatmaps.length > 0 && <select value={beatmap?.id ?? ''} onChange={(event) => void loadBeatmap(event.target.value)}>{songBeatmaps.map((map) => <option key={map.id} value={map.id}>{'★'.repeat(map.difficulty ?? 1)} {map.title} ({map.noteCount})</option>)}</select>}<p>{Math.round(songTimeMs / 1000)}s / {Math.round(importedSong.durationMs / 1000)}s · {beatmap?.notes.length ?? importedSong.noteCount} notes</p><button type="button" onClick={playSong}>Play</button><button type="button" onClick={pauseSong}>Pause</button><button type="button" onClick={restartSong}>Restart</button></> : <p>Load or import a song first.</p>}</section>
+  const judgementText = lastAutoMiss ? 'miss' : lastResult ? lastResult.grade : 'ready'
+  const gradeColor = lastAutoMiss ? '#ff5570' : lastResult?.grade === 'perfect' ? '#ffd166' : lastResult?.grade === 'good' ? '#83ff70' : undefined
+  const timingColor = lastResult?.success ? gradeColor : lastResult ? (lastResult.deltaMs < 0 ? '#83ff70' : '#ff5570') : undefined
+  const roundedDeltaMs = lastResult ? Math.round(lastResult.deltaMs) : null
+  const deltaText = roundedDeltaMs === null ? '—' : `${roundedDeltaMs > 0 ? '+' : ''}${roundedDeltaMs}ms`
 
   return (
     <main>
-      <section className="stage">
-        <Canvas camera={{ position: [0, 0.25, 5.2], fov: 48 }}>
-          <Arena attack={attack} tuning={tuning} lastResult={lastResult} parryPulse={parryPulse} feedback={feedback} onPhaseChange={setPhase} />
-        </Canvas>
-      </section>
-      <div className="toast" aria-live="polite">
-        <strong>{phase}</strong>
+      <section className="stage"><Canvas camera={{ position: [0, 0.18, 7.2], fov: 42 }}><Arena attacks={activeAttacks} tuning={tuning} parryPulse={parryPulse} feedback={feedback} padTriggers={padTriggers} onPhaseChange={setPhase} /></Canvas></section>
+      <div className="status-stack" aria-live="polite">
+        <div className="toast"><strong>{phase}</strong></div>
+        <div className="toast"><strong style={{ color: gradeColor }}>{judgementText}</strong></div>
+        <div className="toast"><strong style={{ color: timingColor }}>{lastAutoMiss ? '—' : deltaText}</strong></div>
       </div>
+      {importedSong && <audio ref={audioRef} src={importedSong.audioUrl} onPlay={() => setIsSongPlaying(true)} onPause={() => setIsSongPlaying(false)} onEnded={() => setIsSongPlaying(false)} onSeeked={() => scheduledNoteIds.current.clear()} />}
       <aside className="panel">
         <h1>Flow Fight: Parry Lab</h1>
-        <p>Projectile-first read. Press <kbd>Space</kbd> when the incoming threat physically reaches the shield. Each shot now randomizes travel speed heavily around the average.</p>
-        <button onClick={parry}>Parry now</button>
-        <button onClick={nextAttack}>New attack</button>
-        {rows.map(([label, value, min, max, unit, key]) => (
-          <label key={key}>
-            <span>{label}: <strong>{value}{unit}</strong></span>
-            <input type="range" min={min} max={max} value={value} onChange={(e) => setTuning((t) => ({ ...t, [key]: Number(e.target.value) }))} />
-          </label>
-        ))}
-        <div className="debug">
-          <h2>Timing debug</h2>
-          <code>zero point: leading edge touches shield</code>
-          <code>impactTime: {attack.impactMs.toFixed(2)}ms</code>
-          <code>this travel: {attack.travelMs.toFixed(0)}ms</code>
-          <code>parry: ±{tuning.parryWindowMs}ms ({tuning.parryWindowMs * 2}ms total)</code>
-          <code>perfect: ±{tuning.perfectWindowMs}ms ({tuning.perfectWindowMs * 2}ms total)</code>
-          <code>delta: {lastResult ? `${lastResult.deltaMs.toFixed(2)}ms` : '—'}</code>
-          <code>result: {lastResult ? `${lastResult.grade} / ${lastResult.success ? 'success' : 'miss'}` : '—'}</code>
-        </div>
+        <p>Song notes schedule projectile <em>impacts</em> on beat. Current analyzer focuses on <kbd>Space</kbd> kick and <kbd>W</kbd> snare.</p>
+        <nav className="tabs">{(['play', 'edit', 'import', 'debug'] as const).map((tab) => <button key={tab} type="button" className={activeTab === tab ? 'active' : ''} onClick={() => setActiveTab(tab)}>{tab}</button>)}</nav>
+
+        {activeTab === 'play' && <>
+          {transport}
+          <section className="importer"><h2>Run stats</h2><p>Hit {stats.hit} · Perfect {stats.perfect} · Good {stats.good} · Miss {stats.missed}</p><p>Streak {stats.streak} · Best {stats.bestStreak} · Accuracy {stats.hit + stats.missed ? Math.round((stats.hit / (stats.hit + stats.missed)) * 100) : 0}%</p></section>
+          <details className="importer"><summary>Options</summary>{rows.slice(0, 2).map(([label, value, min, max, unit, key]) => <label key={key}><span>{label}: <strong>{value}{unit}</strong></span><input type="range" min={min} max={max} value={value} onChange={(e) => setTuning((t) => ({ ...t, [key]: Number(e.target.value) }))} /></label>)}</details>
+        </>}
+
+        {activeTab === 'edit' && <>
+          {transport}
+          <section className="importer"><h2>Create/edit map</h2><p>Create a blank map, edit its details, then save it.</p><input value={mapTitle} onChange={(event) => setMapTitle(event.target.value)} placeholder="Beatmap title" /><label><span>Difficulty: <strong>{'★'.repeat(difficulty)}</strong></span><input type="range" min="1" max="5" value={difficulty} onChange={(event) => setDifficulty(Number(event.target.value))} /></label><div className="chips"><button type="button" onClick={createBlankBeatmap}>New blank map</button><button type="button" onClick={() => void saveBeatmap(false)}>Save current</button><button type="button" onClick={() => void saveBeatmap(true)}>Save as new</button><button type="button" onClick={clearBeatmapEvents}>Wipe events</button></div></section>
+          <section className="importer"><h2>Beatmap jam</h2><p>Arm lanes, choose add/replace, play the song, and tap keys to record notes.</p><div className="chips"><button type="button" onClick={toggleAllLanes}>{armedLanes.size === lanes.length ? 'Deactivate all pads' : 'Activate all pads'}</button>{lanes.map((lane) => <button key={lane} type="button" className={armedLanes.has(lane) ? 'armed' : ''} onClick={() => setArmedLanes((current) => { const next = new Set(current); if (next.has(lane)) next.delete(lane); else next.add(lane); return next })}>{laneKey[lane]} {lane}</button>)}</div><div className="chips"><button type="button" className={recordMode === 'add' ? 'armed' : ''} onClick={() => setRecordMode('add')}>Add</button><button type="button" className={recordMode === 'replace' ? 'armed' : ''} onClick={() => setRecordMode('replace')}>Replace</button><button type="button" className={quantize ? 'armed' : ''} onClick={() => setQuantize((value) => !value)}>Quantize</button></div><label><span>BPM: <strong>{displayedBpm}</strong></span><input type="range" min="60" max="240" value={bpm} onChange={(event) => setBpm(Number(event.target.value))} /></label><div className="chips"><button type="button" className={tapMode ? 'armed' : ''} onClick={toggleTapBpm}>{tapMode ? 'Save tapped BPM' : 'Tap BPM'}</button><button type="button" onClick={() => setTapTimes([])}>Clear taps</button>{detectedBpm && <button type="button" onClick={() => setBpm(Math.round(detectedBpm))}>Use {detectedBpm}</button>}{detectedBpm && <button type="button" onClick={() => setBpm(Math.round(detectedBpm / 2))}>Half</button>}{detectedBpm && <button type="button" onClick={() => setBpm(Math.round(detectedBpm * 2))}>Double</button>}</div><p className="import-status">Tap mode: {tapMode ? 'on — tap Space, W, Left, Up, or Right' : 'off'} · Taps: {tapTimes.length}{detectedBpm ? ` · Detected ${detectedBpm} BPM` : ''}</p><button type="button" onClick={isRecording ? stopRecording : startRecording}>{isRecording ? 'Stop recording' : 'Record'}</button><button type="button" onClick={exportBeatmap}>Export edited JSON</button><p className="import-status">Recorded buffer: {recordedNotes.length} · Beatmap: {beatmap?.notes.length ?? 0} notes</p><div className="timeline"><div className="playhead" />{timelineNotes.filter((note) => Math.abs(note.impactTimeMs - songTimeMs) < 5000).map((note) => <i key={`${note.pending ? 'pending' : 'saved'}-${note.id}`} className={note.pending ? 'pending' : undefined} style={{ left: `${50 + ((note.impactTimeMs - songTimeMs) / 10000) * 100}%`, top: `${lanes.indexOf(note.lane) * 18 + 8}px`, background: laneColor[note.lane] }} />)}</div></section>
+        </>}
+
+        {activeTab === 'import' && <section className="importer"><h2>YouTube import</h2><p>Cached locally. Reusing the same URL skips download/extraction.</p><input type="url" placeholder="https://www.youtube.com/watch?v=…" value={youtubeUrl} onChange={(event) => setYoutubeUrl(event.target.value)} /><button type="button" onClick={importYoutube}>Import/load song</button>{importStatus && <p className="import-status">{importStatus}</p>}{importedSong && <div className="song-card"><strong>{importedSong.title}</strong><span>{Math.round(importedSong.durationMs / 1000)}s · {beatmap?.notes.length ?? importedSong.noteCount} notes</span><a href={importedSong.beatmapUrl} target="_blank">Open original beatmap JSON</a></div>}</section>}
+
+        {activeTab === 'debug' && <>{rows.map(([label, value, min, max, unit, key]) => <label key={key}><span>{label}: <strong>{value}{unit}</strong></span><input type="range" min={min} max={max} value={value} onChange={(e) => setTuning((t) => ({ ...t, [key]: Number(e.target.value) }))} /></label>)}<div className="debug"><h2>Timing debug</h2><code>zero point: leading edge touches shield</code><code>active projectiles: {activeAttacks.length}</code><code>impactTime: {currentAttack ? currentAttack.impactMs.toFixed(2) : '—'}ms</code><code>this travel: {currentAttack ? currentAttack.travelMs.toFixed(0) : '—'}ms</code><code>song mode: {isSongPlaying && beatmap ? `${beatmap.notes.length} notes` : 'off'}</code><code>parry: ±{tuning.parryWindowMs}ms ({tuning.parryWindowMs * 2}ms total)</code><code>perfect: ±{tuning.perfectWindowMs}ms ({tuning.perfectWindowMs * 2}ms total)</code><code>delta: {lastResult ? `${lastResult.deltaMs.toFixed(2)}ms` : '—'}</code><code>result: {lastResult ? `${lastResult.grade} / ${lastResult.success ? 'success' : 'miss'}` : '—'}</code></div></>}
       </aside>
     </main>
   )

@@ -8,25 +8,29 @@ body {
 }
 
 main {
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 380px;
 }
 
 .stage {
-  min-height: 100vh;
+  height: 100vh;
+  min-height: 0;
 }
 
 .panel {
-  padding: 28px;
+  height: 100vh;
+  overflow-y: auto;
+  padding: 20px;
   background: rgba(12, 16, 32, 0.94);
   border-left: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow: -20px 0 50px rgba(0, 0, 0, 0.3);
 }
 
-h1 { margin: 0 0 12px; font-size: 28px; }
-h2 { margin: 0 0 12px; font-size: 16px; color: #9fb4d9; }
-p { color: #b8c4d8; line-height: 1.5; }
+h1 { margin: 0 0 10px; font-size: 24px; }
+h2 { margin: 0 0 10px; font-size: 15px; color: #9fb4d9; }
+p { color: #b8c4d8; line-height: 1.4; }
 
 button {
   border: 0;
@@ -35,6 +39,7 @@ button {
   margin: 0 10px 18px 0;
   background: #4da3ff;
   color: #06101d;
+  font: inherit;
   font-weight: 800;
   cursor: pointer;
 }
@@ -44,9 +49,151 @@ button + button {
   color: #edf3ff;
 }
 
+.tabs {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin: 14px 0 16px;
+  padding: 4px;
+  border-radius: 14px;
+  background: #050812;
+}
+
+.tabs button {
+  margin: 0;
+  min-width: 0;
+  padding: 9px 6px;
+  border-radius: 10px;
+  background: transparent;
+  color: #9fb4d9;
+  font-size: 13px;
+  font-weight: 800;
+  text-align: center;
+  text-transform: capitalize;
+}
+
+.tabs button.active {
+  background: #4da3ff;
+  color: #06101d;
+}
+
 label {
   display: block;
   margin: 18px 0;
+}
+
+.importer {
+  margin: 18px 0 22px;
+  padding: 16px;
+  border-radius: 16px;
+  background: rgba(5, 8, 18, 0.58);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.importer p {
+  margin: 0 0 10px;
+  font-size: 13px;
+}
+
+summary {
+  cursor: pointer;
+  color: #edf3ff;
+  font-weight: 800;
+}
+
+.importer input,
+.importer select {
+  width: 100%;
+  margin-bottom: 10px;
+  padding: 10px 11px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: #050812;
+  color: #edf3ff;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 10px;
+}
+
+.chips button {
+  margin: 0;
+  padding: 7px 9px;
+  border-radius: 999px;
+  background: #222c45;
+  color: #cdd8ea;
+  font-size: 12px;
+}
+
+.chips button.armed {
+  background: #ffd166;
+  color: #120d03;
+}
+
+.import-status {
+  color: #9fb4d9;
+}
+
+.song-card {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.song-card span,
+.song-card a {
+  color: #9fb4d9;
+  font-size: 13px;
+}
+
+.song-card audio {
+  width: 100%;
+}
+
+.timeline {
+  position: relative;
+  height: 98px;
+  margin-top: 12px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.22);
+  overflow: hidden;
+}
+
+.timeline::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(to bottom, transparent 0 17px, rgba(255,255,255,0.06) 18px 19px);
+}
+
+.timeline .playhead {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: rgba(255, 255, 255, 0.65);
+}
+
+.timeline i {
+  position: absolute;
+  width: 5px;
+  height: 12px;
+  border-radius: 3px;
+  transform: translateX(-50%);
+  box-shadow: 0 0 8px currentColor;
+}
+
+.timeline i.pending {
+  width: 8px;
+  height: 14px;
+  outline: 1px solid rgba(255, 255, 255, 0.8);
+  z-index: 2;
 }
 
 label span {
@@ -82,11 +229,17 @@ kbd {
   color: white;
 }
 
-.toast {
+.status-stack {
   position: fixed;
   right: 404px;
   bottom: 18px;
   z-index: 10;
+  display: flex;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.toast {
   width: 104px;
   padding: 8px 11px;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -95,7 +248,6 @@ kbd {
   backdrop-filter: blur(8px);
   color: #cdd8ea;
   font-size: 12px;
-  pointer-events: none;
 }
 
 .toast strong {
@@ -108,7 +260,9 @@ kbd {
 
 @media (max-width: 900px) {
   main { grid-template-columns: 1fr; }
-  .stage { min-height: 55vh; }
-  .panel { border-left: 0; border-top: 1px solid rgba(255, 255, 255, 0.1); }
-  .toast { right: 18px; bottom: 18px; }
+  main { height: auto; overflow: visible; }
+  .stage { height: 55vh; min-height: 360px; }
+  .panel { height: auto; overflow: visible; border-left: 0; border-top: 1px solid rgba(255, 255, 255, 0.1); }
+  .status-stack { right: 18px; bottom: 18px; }
+  .toast { width: 96px; }
 }
