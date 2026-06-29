@@ -25,14 +25,14 @@ export function judgeParryTiming({
   const adjustedInputMs = inputTimeMs + inputOffsetMs
   const deltaMs = adjustedInputMs - impactTimeMs
   const absDeltaMs = Math.abs(deltaMs)
-  const halfWindowMs = parryWindowMs / 2
-  const halfPerfectMs = perfectWindowMs / 2
+  const leniencyMs = parryWindowMs
+  const perfectLeniencyMs = perfectWindowMs
 
-  if (absDeltaMs <= halfPerfectMs) {
+  if (absDeltaMs <= perfectLeniencyMs) {
     return { deltaMs, absDeltaMs, success: true, grade: 'perfect' }
   }
 
-  if (absDeltaMs <= halfWindowMs) {
+  if (absDeltaMs <= leniencyMs) {
     return { deltaMs, absDeltaMs, success: true, grade: 'good' }
   }
 

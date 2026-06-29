@@ -28,7 +28,7 @@ type FeedbackEvent = {
 }
 
 const initialTuning: Tuning = {
-  parryWindowMs: 120,
+  parryWindowMs: 80,
   perfectWindowMs: 40,
   telegraphMs: 1150,
   recoveryMs: 260,
@@ -96,7 +96,7 @@ function makeAttack(tuning: Tuning, delayMs = 500): Attack {
   }
 }
 
-function Arena({ attack, tuning, lastResult, parryPulse, feedback }: { attack: Attack; tuning: Tuning; lastResult: ParryTimingResult | null; parryPulse: number; feedback: FeedbackEvent | null }) {
+function Arena({ attack, tuning, lastResult, parryPulse, feedback, onPhaseChange }: { attack: Attack; tuning: Tuning; lastResult: ParryTimingResult | null; parryPulse: number; feedback: FeedbackEvent | null; onPhaseChange: (phase: string) => void }) {
   const attacker = useRef<Mesh>(null)
   const player = useRef<Mesh>(null)
   const projectile = useRef<Mesh>(null)
@@ -106,12 +106,11 @@ function Arena({ attack, tuning, lastResult, parryPulse, feedback }: { attack: A
   const shieldBoard = useRef<Mesh>(null)
   const shieldBoardMaterial = useRef<MeshStandardMaterial>(null)
   const burst = useRef<Group>(null)
-  const [phase, setPhase] = useState('charging')
 
   useFrame(() => {
     const now = performance.now()
     const currentPhase = attackPhase(now, attack.startMs, attack.impactMs, tuning.recoveryMs)
-    setPhase(currentPhase === 'windup' ? 'incoming' : currentPhase)
+    onPhaseChange(currentPhase === 'windup' ? 'incoming' : currentPhase)
 
     const travel = clamp01((now - attack.startMs) / attack.travelMs)
     const impactAge = now - attack.impactMs
@@ -280,9 +279,6 @@ function Arena({ attack, tuning, lastResult, parryPulse, feedback }: { attack: A
         </mesh>
       </group>
 
-      <Text position={[0, 1.45, 0]} fontSize={0.16} color="#cdd8ea" anchorX="center">
-        {phase.toUpperCase()}
-      </Text>
       {lastResult && (
         <Text position={[0, 1.12, 0]} fontSize={0.23} color={resultColor} anchorX="center">
           {lastResult.grade.toUpperCase()} {lastResult.deltaMs.toFixed(1)}ms
@@ -298,6 +294,7 @@ function App() {
   const [lastResult, setLastResult] = useState<ParryTimingResult | null>(null)
   const [parryPulse, setParryPulse] = useState(0)
   const [feedback, setFeedback] = useState<FeedbackEvent | null>(null)
+  const [phase, setPhase] = useState('queued')
 
   const nextAttack = useCallback(() => {
     setLastResult(null)
@@ -335,8 +332,8 @@ function App() {
   }, [attack.impactMs, nextAttack, tuning.recoveryMs])
 
   const rows = useMemo(() => [
-    ['Parry total', tuning.parryWindowMs, 20, 260, 'ms', 'parryWindowMs'],
-    ['Perfect total', tuning.perfectWindowMs, 10, 120, 'ms', 'perfectWindowMs'],
+    ['Parry ±', tuning.parryWindowMs, 20, 260, 'ms', 'parryWindowMs'],
+    ['Perfect ±', tuning.perfectWindowMs, 10, 120, 'ms', 'perfectWindowMs'],
     ['Avg travel', tuning.telegraphMs, 450, 2000, 'ms', 'telegraphMs'],
     ['Input offset', tuning.inputOffsetMs, -80, 80, 'ms', 'inputOffsetMs'],
   ] as const, [tuning])
@@ -345,9 +342,12 @@ function App() {
     <main>
       <section className="stage">
         <Canvas camera={{ position: [0, 0.25, 5.2], fov: 48 }}>
-          <Arena attack={attack} tuning={tuning} lastResult={lastResult} parryPulse={parryPulse} feedback={feedback} />
+          <Arena attack={attack} tuning={tuning} lastResult={lastResult} parryPulse={parryPulse} feedback={feedback} onPhaseChange={setPhase} />
         </Canvas>
       </section>
+      <div className="toast" aria-live="polite">
+        <strong>{phase}</strong>
+      </div>
       <aside className="panel">
         <h1>Flow Fight: Parry Lab</h1>
         <p>Projectile-first read. Press <kbd>Space</kbd> when the incoming threat physically reaches the shield. Each shot now randomizes travel speed heavily around the average.</p>
@@ -364,8 +364,8 @@ function App() {
           <code>zero point: leading edge touches shield</code>
           <code>impactTime: {attack.impactMs.toFixed(2)}ms</code>
           <code>this travel: {attack.travelMs.toFixed(0)}ms</code>
-          <code>parry: ±{(tuning.parryWindowMs / 2).toFixed(1)}ms ({tuning.parryWindowMs}ms total)</code>
-          <code>perfect: ±{(tuning.perfectWindowMs / 2).toFixed(1)}ms ({tuning.perfectWindowMs}ms total)</code>
+          <code>parry: ±{tuning.parryWindowMs}ms ({tuning.parryWindowMs * 2}ms total)</code>
+          <code>perfect: ±{tuning.perfectWindowMs}ms ({tuning.perfectWindowMs * 2}ms total)</code>
           <code>delta: {lastResult ? `${lastResult.deltaMs.toFixed(2)}ms` : '—'}</code>
           <code>result: {lastResult ? `${lastResult.grade} / ${lastResult.success ? 'success' : 'miss'}` : '—'}</code>
         </div>

@@ -82,8 +82,33 @@ kbd {
   color: white;
 }
 
+.toast {
+  position: fixed;
+  right: 404px;
+  bottom: 18px;
+  z-index: 10;
+  width: 104px;
+  padding: 8px 11px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(5, 8, 18, 0.58);
+  backdrop-filter: blur(8px);
+  color: #cdd8ea;
+  font-size: 12px;
+  pointer-events: none;
+}
+
+.toast strong {
+  display: block;
+  color: #edf3ff;
+  font-size: 13px;
+  text-align: center;
+  text-transform: uppercase;
+}
+
 @media (max-width: 900px) {
   main { grid-template-columns: 1fr; }
   .stage { min-height: 55vh; }
   .panel { border-left: 0; border-top: 1px solid rgba(255, 255, 255, 0.1); }
+  .toast { right: 18px; bottom: 18px; }
 }
