@@ -1,279 +1,317 @@
-# Flow Fight Design Notes
+# Flow Fight Design Notes: Open Browser Rhythm Game + Powerful Map Editor
 
-## Current direction: music-synced parry encounters
+## Current direction
 
-Flow Fight started as a parry prototype and drifted toward rhythm-game tooling. The stronger identity may be a hybrid:
+Flow Fight is now aimed at being an **open Guitar Hero / Beat Saber-style rhythm game that runs in the browser** and ships with a serious built-in map editor.
 
-> A music-synced parry game where reusable enemies perform attack vocabularies to songs.
+The project should be understood as two tightly connected products:
 
-Instead of requiring a full hand-authored beatmap for every song, songs provide tempo, structure, and energy. Enemies provide readable attack patterns. Encounters mix enemies and attack patterns into song sections.
+1. **A browser rhythm game** for playing local/imported songs and custom charts.
+2. **A powerful, low-friction map editor** for generating, recording, correcting, saving, and sharing beatmaps.
 
-## Core distinction
+The editor is not secondary. The core promise is:
 
-### Pure rhythm game
+> Import a song, get or make a chart quickly, refine it by feel, then play it immediately in the browser.
 
-The player primarily reads the music/chart.
+## One-sentence pitch
 
-Strengths:
+Flow Fight is an open, browser-based rhythm game and map editor where players can import songs, create charts by playing along, manually polish them on a DAW-like grid, and own/export their maps.
 
-- High replay value from songs and maps.
-- Editor/community content can scale.
-- Compatibility with formats like Beat Saber/Osu/StepMania may become valuable.
-- Abstract visuals can still be fun if timing readability is strong.
+## Product identity
 
-Best presentation:
+Flow Fight should sit closest to:
 
-- Top-down or toward-player note highway.
-- Lane identity on one axis, timing on the other.
-- Holds and chords are visually straightforward.
+- Guitar Hero / Clone Hero
+- Beat Saber
+- StepMania
+- Osu-style community mapping
+- lightweight DAW/piano-roll editors
 
-### Pure parry game
+The distinctive value is not just “a rhythm game in the browser.” It is:
 
-The player primarily reads the enemy.
+- open formats
+- local-first ownership
+- instant browser play
+- jam-based chart creation
+- DAW-like manual correction
+- import/generation workflow
+- modding/remix potential
 
-Strengths:
+## Design priority
 
-- More distinctive; fewer games are fundamentally about parrying.
-- Mastery comes from reading tells, delays, feints, and movesets.
-- Encounters can feel richer and more characterful.
+The chart is the game.
 
-Costs:
+Presentation can be parry/combat-flavored, but gameplay and editor readability matter more than enemy content. Avoid building bespoke enemies or scripted encounters until the core song → map → play loop feels excellent.
 
-- Usually needs authored enemy tells, animations, camera framing, and VFX.
-- Full 3D character animation is a much larger production burden.
+## Core user loop
 
-Examples / references:
+1. Import or select a song.
+2. Load or generate a draft beatmap.
+3. Press play and test the chart.
+4. Press record and play lane keys by feel.
+5. Use the timeline grid for precise cleanup.
+6. Save/export the beatmap.
+7. Replay immediately.
 
-- Expedition 33 works partly because attacks have readable character, rhythm, windup, and impact timing.
-- Sekiro-style mastery comes from learning enemy body language and move timing.
+The editor should support both creator mindsets:
 
-### Flow Fight hybrid
+### Feel recording
 
-The player reads both:
+This is the main charting workflow:
 
-- Music provides timing grid, energy, and replayable structure.
-- Enemies provide attack vocabulary, tells, and encounter identity.
+- press Record
+- song plays
+- user taps lanes with keyboard/pad controls
+- inputs are captured as notes
+- optional quantization snaps them to the grid
+- stop recording merges/overdubs/replaces notes
 
-This suggests a game that is not simply “map every note in the song,” but “compose encounters that perform to the song.”
+Current lane keys:
 
-## Proposed content model
+- Space = kick
+- W = snare
+- Left Arrow = low
+- Up Arrow = mid
+- Right Arrow = high
 
-### Song
+### Manual adjustment
 
-A song provides:
+When not recording, the timeline behaves like an editor:
 
-- Audio file / imported URL
-- BPM
-- Downbeat / beat offset
-- Sections: intro, verse, chorus, drop, bridge, outro
-- Energy curve / density hints
-- Optional detected musical events
+- click empty lane area to add a snapped note
+- click an existing note to remove it
+- use grid divisions for precision
+- zoom to see more or less of the song
+- eventually drag notes, select ranges, copy/paste, loop sections
 
-The song does not necessarily need a complete authored note chart.
+## Editor direction
 
-### Enemy
+The editor should become DAW-like, but focused and approachable.
 
-An enemy defines a reusable attack vocabulary.
+Important editor concepts:
 
-Example:
+- fixed lane rows
+- beat ruler at the top
+- clear bar/beat/subdivision grid lines
+- zoom that changes visible song duration
+- snap grid independent of zoom
+- current-time/playhead marker
+- compact transport controls
+- prominent record controls
+- metadata and destructive actions separated from active editing
 
-```txt
-Enemy: Twin Duelist
-Works well: 90–150 BPM
-Attack patterns:
-- Jab: 1-beat single parry
-- Double cut: eighth-note pair
-- Sweep: low-lane hold
-- Feint slash: delayed hit after windup
-- Cross combo: left-right-left
-- Chorus rush: 2-bar phrase
-- Recovery taunt: safe gap
+### Current editor principles learned
+
+- The main editing surface should live in the main pane, not hidden in a scrollable sidebar.
+- Sidebar controls should be secondary: metadata, library, save-as/new/export/wipe.
+- Primary controls belong above the timeline: play/pause, record, mode, lanes, grid, zoom, tempo, selection.
+- Do not duplicate controls between sidebar and main pane.
+- The layout must not reflow when switching tabs; tabs and panels should remain stable.
+- Focused text inputs must not be intercepted by gameplay key handlers.
+
+### Zoom vs grid
+
+Zoom and grid are separate concepts:
+
+- **Zoom** controls how much of the song is visible: e.g. 2s, 4s, 10s, 30s, whole song.
+- **Grid division** controls musical snapping/subdivision: 1/4, 1/8, 1/16, 1/32.
+
+Changing zoom should make the same musical beats appear larger or smaller on screen. Changing grid should add/remove subdivision lines and change snap precision.
+
+### Lane layout
+
+The timeline should show exactly the active lanes, currently five:
+
+1. kick
+2. snare
+3. low
+4. mid
+5. high
+
+Lane rows should be compact, clearly separated, and labelled on the left side of the lane. Empty space below the active lanes should remain empty and available for future tools, not appear as fake lanes.
+
+## Gameplay model
+
+### Inputs
+
+Current five-lane keyboard layout:
+
+- Space = kick
+- W = snare
+- Left Arrow = low
+- Up Arrow = mid
+- Right Arrow = high
+
+Five lanes are expressive but may be awkward for some players. A four-lane mode and configurable key bindings are likely needed later.
+
+### Timing
+
+Use rhythm-game timing as the baseline:
+
+- symmetric early/late hit windows
+- perfect/good/miss
+- visible timing delta
+- calibration eventually
+
+Key principle:
+
+> Notes should arrive on the beat. Projectiles should not launch on the beat.
+
+### Visual layout
+
+The current parry/projectile view gives the game identity, but the project should remain open to a more conventional highway if readability demands it.
+
+Candidate modes:
+
+1. Current right-to-left parry lanes.
+2. Conventional note highway toward a hit line.
+3. Hybrid combat highway with avatars/sources at the far end.
+
+Evaluate by readability and density handling, not theme preference.
+
+## Beatmap model
+
+Beatmaps remain the playable source of truth.
+
+```ts
+type Beatmap = {
+  id: string;
+  songId: string;
+  title: string;
+  difficulty: 1 | 2 | 3 | 4 | 5;
+  bpm: number;
+  offsetMs?: number;
+  version: number;
+  durationMs: number;
+  notes: Note[];
+};
 ```
 
-Enemy data might include:
+Notes should support:
 
-- Supported BPM range
-- Visual theme / silhouette / VFX
-- Attack patterns
-- Difficulty tags
-- Pattern weights
-- Allowed song-section types
-- Telegraph style
-- Recovery windows
+- lane
+- impact time
+- optional duration for holds
+- source metadata: generated/manual/manual-grid/manual-hold/imported
+- confidence for generated notes later
 
-### Attack pattern
+BPM is fundamental editor state and must stick per song/beatmap. Future work should persist BPM, offset, downbeat, and grid preferences in the saved beatmap and/or song metadata.
 
-An attack pattern is beat-relative, not absolute song-time-only.
+## Song/map ownership
 
-It might define:
+Flow Fight should be local-first by default:
 
-- Duration in beats/bars
-- Lane sequence
-- Hit timings relative to pattern start
-- Holds
-- Telegraph timing
-- Feints or delayed hits
-- Intensity/difficulty
-- Required spacing before/after
+- local imports
+- local cached audio
+- local beatmaps
+- transparent JSON
+- no account required
+- easy export/import
+- no required central server
 
-Example shape:
+Sharing should avoid redistributing copyrighted audio. Beatmaps should be separable from source audio.
 
-```json
-{
-  "id": "double-cut",
-  "enemyId": "twin-duelist",
-  "beats": 1,
-  "notes": [
-    { "beat": 0, "lane": "low" },
-    { "beat": 0.5, "lane": "high" }
-  ],
-  "tags": ["eighths", "combo", "duelist"]
-}
-```
+## Auto-generation
 
-### Encounter
+Auto-generation is a draft helper, not magic.
 
-An encounter assigns enemies and pattern rules to song sections.
+The generated chart only needs to be useful enough to edit. The editor must make correction fast.
 
-Example:
+Near-term generated-map goals:
 
-```txt
-Verse:
-- enemy: Twin Duelist
-- density: low
-- allowed attacks: jab, double cut, sweep
+- better BPM detection
+- beat offset/downbeat calibration
+- stronger kick/snare onset extraction
+- confidence metadata
+- region replacement tools
+- difficulty thinning/intensifying
 
-Chorus:
-- enemy: Twin Duelist + Bell Mage
-- density: high
-- allowed attacks: cross combo, chorus rush, projectile pulse
+## Open-source angle
 
-Bridge:
-- enemy: Bell Mage
-- density: medium
-- allowed attacks: delayed bells, hold pulse
-```
+Open source should be concrete:
 
-The encounter generator chooses patterns that fit the current BPM, section energy, difficulty, and spacing constraints.
+- documented map format
+- documented import/cache structure
+- modular analyzers
+- import/export tools
+- theme/skin support
+- configurable lanes/inputs
+- browser-first deployment
+- local-first defaults
 
-## Editor implications
+Potential contributor areas:
 
-The editor may evolve from a beatmap editor into an encounter composer with multiple layers.
+- chart generators
+- format import/export
+- timing calibration
+- editor tools
+- visual themes
+- accessibility modes
+- performance optimization
 
-### 1. Song setup mode
+## Near-term goals
 
-Purpose: make the song usable.
+Highest priority now:
 
-Features:
+1. Make the editor feel professional and maintainable.
+2. Keep extracting editor UI into proper components instead of inline JSX blobs.
+3. Improve timeline correctness: ruler, zoom, playhead, lane layout, snapping.
+4. Add drag/move notes and range selection.
+5. Add beat offset/downbeat calibration.
+6. Improve save/duplicate/delete/rename safety for beatmaps.
+7. Improve generated draft maps.
+8. Make recording-by-feel satisfying and reliable.
+9. Keep the play view readable as charts become denser.
 
-- Import audio.
-- Detect/adjust BPM.
-- Set downbeat/beat offset.
-- Mark sections.
-- Review detected energy/onsets.
+## Engineering guidance
 
-### 2. Enemy/pattern mode
+The editor is becoming complex enough to require real abstractions:
 
-Purpose: author reusable enemy behavior.
+- separate timeline component
+- separate toolbar/transport components
+- typed timeline bounds/grid helpers
+- isolated note editing operations
+- reusable play/pause control
+- eventually separate editor state management from `App.tsx`
 
-Features:
+Avoid large inline JSX blocks for complex UI. The code should make the product model obvious: song, beatmap, transport, timeline, grid, recording, selection.
 
-- Create enemy.
-- Define supported BPM range.
-- Build attack patterns on a beat grid.
-- Preview pattern at different BPMs.
-- Define telegraph / impact / recovery timing.
-- Tag difficulty and section suitability.
+## Risks
 
-### 3. Encounter mode
+### Risk: It is just another rhythm game
 
-Purpose: compose a song-specific fight from reusable enemies.
+Mitigation: focus on open import/edit/share workflow, not only gameplay.
 
-Features:
+### Risk: Editor becomes messy
 
-- Assign enemies to sections.
-- Set density/intensity per section.
-- Choose allowed/blocked patterns.
-- Generate draft encounter.
-- Jam-refine generated result.
-- Save overrides where needed.
+Mitigation: componentize aggressively and keep interaction modes simple.
 
-## Roguelike possibility
+### Risk: Generated maps feel bad
 
-This model naturally supports roguelike or run-based structure.
+Mitigation: treat generation as a draft and make manual correction fast.
 
-Ideas:
+### Risk: Browser timing issues
 
-- A run uses a playlist or song pool.
-- Each room chooses a song section + enemy/enemy group.
-- Enemies have attack decks.
-- Bosses have signature attacks synced to choruses/drops.
-- Relics/modifiers alter parry windows, rewards, lane behavior, or pattern generation.
-- The player learns enemy vocabularies across different songs.
+Mitigation: calibration, explicit timing logic, browser testing.
 
-This could create replayability without needing every song to be fully hand-mapped.
+### Risk: Five lanes are awkward
 
-## Visual/presentation direction
+Mitigation: configurable layouts and possible four-lane mode.
 
-Avoid jumping straight to full 3D character animation. Start with readable abstract enemies.
+### Risk: Copyright/sharing problems
 
-Possible enemy representations:
+Mitigation: local-first audio, separate beatmap export.
 
-- Stylized silhouettes
-- Masks/totems
-- Mechanical cannons
-- VFX-first attackers
-- Simple rigged figures
-- Animated symbols
-- Enemy “cards” or avatars that trigger attacks
+## Decision checkpoint
 
-The key requirement is readable authored tells, not expensive realism.
+After the editor and play loop are stronger, evaluate:
 
-## Open design question: note highway vs parry arena
+- Can a user create a fun map quickly?
+- Is feel-recording faster than manual charting?
+- Is manual cleanup pleasant enough?
+- Does the parry theme help or hurt readability?
+- Should the game view become a more conventional highway?
 
-### Top-down / Guitar Hero-like
+Current north star:
 
-Pros:
-
-- Best for rhythm readability.
-- Lanes map clearly left-to-right.
-- Timing is easy to read against a horizontal hit line.
-- Holds/chords/dense patterns are easier to parse.
-
-Cons:
-
-- Less immediately “parry combat.”
-- Can feel like a conventional rhythm game if enemy presentation is weak.
-
-### Right-to-left / current parry arena
-
-Pros:
-
-- Stronger combat/parry fantasy.
-- Projectiles attacking a shield reads thematically.
-- Enemy/cannon source is spatially clear.
-
-Cons:
-
-- Less standard for rhythm literacy.
-- Lane/input mapping is less obvious.
-- Dense patterns and holds may be harder to parse.
-
-### Hybrid possibility
-
-Use a clear rhythm highway for timing while placing enemy tells/avatars at the source side/top of the highway.
-
-Possible framing:
-
-- Enemy at top/source side performs tells.
-- Notes/attacks travel toward a clear parry line.
-- Hit/parry feedback remains combat-flavored.
-
-## Near-term prototype goals
-
-1. Keep current gameplay working.
-2. Prototype a top-down/toward-player highway layout for readability comparison.
-3. Add a simple enemy-pattern data model separate from song beatmaps.
-4. Create 2–3 reusable attack patterns and generate them against BPM.
-5. Let a song section choose from enemy patterns instead of requiring full manual mapping.
-6. Preserve manual jam editing as an override/refinement layer.
+> Build the most accessible open rhythm charting and playback loop possible in the browser, with a powerful map editor as a first-class feature.
