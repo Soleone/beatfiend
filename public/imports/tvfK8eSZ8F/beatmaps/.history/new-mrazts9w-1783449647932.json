@@ -1,0 +1,26 @@
+{
+  "id": "new-mrazts9w",
+  "title": "new",
+  "generatedAt": "2026-07-07T18:38:41.298Z",
+  "kind": "drum-onset-kick-every-second-snare-v2",
+  "durationMs": 243961,
+  "lanes": [
+    "kick",
+    "snare"
+  ],
+  "controls": {
+    "kick": "Space",
+    "snare": "W",
+    "low": "ArrowLeft",
+    "mid": "ArrowUp",
+    "high": "ArrowRight"
+  },
+  "notes": [],
+  "bpm": 120,
+  "difficulty": 1,
+  "songId": "tvfK8eSZ8F",
+  "source": "manual",
+  "updatedAt": "2026-07-07T18:39:37.025Z",
+  "createdAt": "2026-07-07T18:39:31.496Z",
+  "version": 2
+}

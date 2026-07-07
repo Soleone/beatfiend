@@ -2,7 +2,7 @@ import { Canvas, useFrame } from '@react-three/fiber'
 import { Text } from '@react-three/drei'
 import { Color } from 'three'
 import type { Group, Mesh, MeshStandardMaterial } from 'three'
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type WheelEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent, type WheelEvent } from 'react'
 import './App.css'
 import { Badge, Button, ButtonGroup, Card, CardDescription, CardHeader, CardTitle, Disclosure, DisclosureSummary, Field, FieldLabel, Input, Select, Slider, Stack, Tabs } from './components/base-ui'
 import { attackPhase, judgeParryTiming, type ParryTimingResult } from './game/timing'
@@ -165,6 +165,7 @@ function EditorTimeline({
   selectedNoteId,
   onTimelineClick,
   onTimelineWheel,
+  onSeek,
   onRemoveNote,
 }: {
   notes: Array<BeatmapNote & { pending: boolean }>
@@ -174,16 +175,23 @@ function EditorTimeline({
   selectedNoteId: string | null
   onTimelineClick: (event: MouseEvent<HTMLDivElement>) => void
   onTimelineWheel: (event: WheelEvent<HTMLDivElement>) => void
+  onSeek: (timeMs: number) => void
   onRemoveNote: (noteId: string) => void
 }) {
   const playheadLeft = ((songTimeMs - bounds.startMs) / bounds.spanMs) * 100
+  const dragPlayhead = (event: PointerEvent<HTMLDivElement>) => {
+    const rect = event.currentTarget.parentElement?.getBoundingClientRect()
+    if (!rect) return
+    const xRatio = clamp01((event.clientX - rect.left) / rect.width)
+    onSeek(bounds.startMs + xRatio * bounds.spanMs)
+  }
 
   return (
     <div className="timeline timeline--expanded" onClick={onTimelineClick} onWheel={onTimelineWheel}>
       <div className="timeline-ruler">{gridLines.filter((line) => line.label).map((line, index) => <span key={`label-${line.left}-${index}`} className={`timeline-ruler__mark timeline-ruler__mark--${line.strength}`} style={{ left: `${line.left}%` }}>{line.label}</span>)}</div>
       <div className="timeline-grid">{gridLines.map((line, index) => <span key={`${line.left}-${index}`} className={`timeline-grid__line timeline-grid__line--${line.strength}`} style={{ left: `${line.left}%` }} />)}</div>
       <div className="timeline-labels">{lanes.map((lane) => <span key={lane}>{lane}</span>)}</div>
-      {playheadLeft >= 0 && playheadLeft <= 100 && <div className="playhead" style={{ left: `${playheadLeft}%` }} />}
+      {playheadLeft >= 0 && playheadLeft <= 100 && <div className="playhead" style={{ left: `${playheadLeft}%` }} title="Drag to seek" onClick={(event) => event.stopPropagation()} onPointerDown={(event) => { event.stopPropagation(); event.currentTarget.setPointerCapture(event.pointerId); dragPlayhead(event) }} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) dragPlayhead(event) }} onPointerUp={(event) => { event.stopPropagation(); if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId) }} />}
       {notes.filter((note) => note.impactTimeMs >= bounds.startMs && note.impactTimeMs <= bounds.endMs).map((note) => <i key={`stage-${note.pending ? 'pending' : 'saved'}-${note.id}`} className={`${note.pending ? 'pending ' : ''}${selectedNoteId === note.id ? 'selected' : ''}`} onClick={(event) => { event.stopPropagation(); onRemoveNote(note.id) }} title={`Remove ${note.lane} ${Math.round(note.impactTimeMs)}ms`} style={{ left: `${((note.impactTimeMs - bounds.startMs) / bounds.spanMs) * 100}%`, top: `${timelineLaneTopPx + lanes.indexOf(note.lane) * timelineLaneHeightPx + 14}px`, width: note.durationMs ? `${Math.max(8, (note.durationMs / bounds.spanMs) * 100)}%` : undefined, background: laneColor[note.lane] }} />)}
     </div>
   )
@@ -573,12 +581,25 @@ function App() {
     URL.revokeObjectURL(url)
   }, [beatmap, bpm, difficulty, mapTitle])
 
+  const seekSong = useCallback((timeMs: number) => {
+    const audio = audioRef.current
+    const durationMs = importedSong?.durationMs ?? beatmap?.durationMs ?? 0
+    const nextTimeMs = Math.min(Math.max(0, timeMs), durationMs || Math.max(0, timeMs))
+    if (audio) audio.currentTime = nextTimeMs / 1000
+    setSongTimeMs(nextTimeMs)
+    scheduledNoteIds.current.clear()
+    setActiveAttacks([])
+    setLastResult(null)
+    setLastAutoMiss(false)
+    setFeedback(null)
+  }, [beatmap?.durationMs, importedSong?.durationMs])
   const playSong = useCallback(() => { void audioRef.current?.play() }, [])
   const pauseSong = useCallback(() => { audioRef.current?.pause() }, [])
   const restartSong = useCallback(() => {
     const audio = audioRef.current
     if (!audio) return
     audio.currentTime = 0
+    setSongTimeMs(0)
     scheduledNoteIds.current.clear()
     setActiveAttacks([])
     setStats({ hit: 0, perfect: 0, good: 0, missed: 0, streak: 0, bestStreak: 0 })
@@ -701,7 +722,7 @@ function App() {
     <main className={activeTab === 'edit' ? 'editing-layout' : undefined}>
       <section className={activeTab === 'edit' ? 'stage edit-stage' : 'stage'}>
         {activeTab === 'edit'
-          ? <div className="edit-workspace"><div className="edit-workspace__header"><div className="edit-title-row"><div><span className="eyebrow">Pattern editor</span><h2>{mapTitle || 'Untitled beatmap'}</h2><p>{recordedNotes.length} buffered · {beatmap?.notes.length ?? 0} saved · Record captures Space/W/arrows by feel · click notes to remove</p></div><div className="edit-primary-actions"><PlayPauseButton isPlaying={isSongPlaying} onPlay={playSong} onPause={pauseSong} /><Button type="button" variant={isRecording ? 'warning' : 'secondary'} onClick={isRecording ? stopRecording : startRecording}>{isRecording ? 'Stop rec' : 'Record'}</Button><Button type="button" variant="secondary" onClick={() => void saveBeatmap(false)} disabled={!beatmap || !importedSong}>Save</Button></div></div><div className="edit-toolbar"><div className="toolbar-section"><span className="toolbar-section__label">Record</span><div className="toolbar-group"><Button type="button" variant="ghost" size="pill" className={recordMode === 'add' ? 'active' : ''} onClick={() => setRecordMode('add')}>Add</Button><Button type="button" variant="ghost" size="pill" className={recordMode === 'replace' ? 'active' : ''} onClick={() => setRecordMode('replace')}>Replace</Button></div></div><div className="toolbar-section toolbar-section--wide"><span className="toolbar-section__label">Lanes</span><div className="toolbar-group">{lanes.map((lane) => <Button key={lane} type="button" variant="ghost" size="pill" className={armedLanes.has(lane) ? 'active' : ''} onClick={() => setArmedLanes((current) => { const next = new Set(current); if (next.has(lane)) next.delete(lane); else next.add(lane); return next })}>{lane}</Button>)}</div></div><div className="toolbar-section"><span className="toolbar-section__label">Grid</span><div className="toolbar-group">{([4, 8, 16, 32] as const).map((division) => <Button key={division} type="button" variant="ghost" size="pill" className={gridDivision === division ? 'active' : ''} onClick={() => setGridDivision(division)}>1/{division}</Button>)}<Button type="button" variant="ghost" size="pill" className={quantize ? 'active' : ''} onClick={() => setQuantize((value) => !value)}>Snap</Button></div></div><div className="toolbar-section"><span className="toolbar-section__label">Zoom</span><div className="toolbar-group">{zoomOptions.map((seconds) => <Button key={seconds} type="button" variant="ghost" size="pill" className={timelineZoomSeconds === seconds ? 'active' : ''} onClick={() => setTimelineZoomSeconds(seconds)}>{seconds * 2}s</Button>)}<Button type="button" variant="ghost" size="pill" className={timelineZoomSeconds === 'fit' ? 'active' : ''} onClick={() => setTimelineZoomSeconds('fit')}>Fit</Button></div></div><div className="toolbar-section"><span className="toolbar-section__label">Tempo</span><div className="toolbar-group"><Input type="number" min="40" max="300" value={bpm} onChange={(event) => setBpm(Number(event.target.value))} /><Button type="button" variant="ghost" size="pill" onClick={toggleTapBpm}>{tapMode ? 'Save tap' : 'Tap'}</Button></div></div><div className="toolbar-section"><span className="toolbar-section__label">Selection</span><div className="toolbar-group"><Button type="button" variant="ghost" size="pill" onClick={() => selectedNoteId && removeNote(selectedNoteId)} disabled={!selectedNoteId}>Delete</Button></div></div></div></div><EditorTimeline notes={timelineNotes} gridLines={timelineGridLines} bounds={timelineBounds} songTimeMs={songTimeMs} selectedNoteId={selectedNoteId} onTimelineClick={handleTimelineClick} onTimelineWheel={handleTimelineWheel} onRemoveNote={removeNote} /></div>
+          ? <div className="edit-workspace"><div className="edit-workspace__header"><div className="edit-title-row"><div><span className="eyebrow">Pattern editor</span><h2>{mapTitle || 'Untitled beatmap'}</h2><p>{recordedNotes.length} buffered · {beatmap?.notes.length ?? 0} saved · Record captures Space/W/arrows by feel · click notes to remove</p></div><div className="edit-primary-actions"><PlayPauseButton isPlaying={isSongPlaying} onPlay={playSong} onPause={pauseSong} /><Button type="button" variant={isRecording ? 'warning' : 'secondary'} onClick={isRecording ? stopRecording : startRecording}>{isRecording ? 'Stop rec' : 'Record'}</Button><Button type="button" variant="secondary" onClick={() => void saveBeatmap(false)} disabled={!beatmap || !importedSong}>Save</Button></div></div><div className="edit-toolbar"><div className="toolbar-section"><span className="toolbar-section__label">Record</span><div className="toolbar-group"><Button type="button" variant="ghost" size="pill" className={recordMode === 'add' ? 'active' : ''} onClick={() => setRecordMode('add')}>Add</Button><Button type="button" variant="ghost" size="pill" className={recordMode === 'replace' ? 'active' : ''} onClick={() => setRecordMode('replace')}>Replace</Button></div></div><div className="toolbar-section toolbar-section--wide"><span className="toolbar-section__label">Lanes</span><div className="toolbar-group">{lanes.map((lane) => <Button key={lane} type="button" variant="ghost" size="pill" className={armedLanes.has(lane) ? 'active' : ''} onClick={() => setArmedLanes((current) => { const next = new Set(current); if (next.has(lane)) next.delete(lane); else next.add(lane); return next })}>{lane}</Button>)}</div></div><div className="toolbar-section"><span className="toolbar-section__label">Grid</span><div className="toolbar-group">{([4, 8, 16, 32] as const).map((division) => <Button key={division} type="button" variant="ghost" size="pill" className={gridDivision === division ? 'active' : ''} onClick={() => setGridDivision(division)}>1/{division}</Button>)}<Button type="button" variant="ghost" size="pill" className={quantize ? 'active' : ''} onClick={() => setQuantize((value) => !value)}>Snap</Button></div></div><div className="toolbar-section"><span className="toolbar-section__label">Zoom</span><div className="toolbar-group">{zoomOptions.map((seconds) => <Button key={seconds} type="button" variant="ghost" size="pill" className={timelineZoomSeconds === seconds ? 'active' : ''} onClick={() => setTimelineZoomSeconds(seconds)}>{seconds * 2}s</Button>)}<Button type="button" variant="ghost" size="pill" className={timelineZoomSeconds === 'fit' ? 'active' : ''} onClick={() => setTimelineZoomSeconds('fit')}>Fit</Button></div></div><div className="toolbar-section"><span className="toolbar-section__label">Tempo</span><div className="toolbar-group"><Input type="number" min="40" max="300" value={bpm} onChange={(event) => setBpm(Number(event.target.value))} /><Button type="button" variant="ghost" size="pill" onClick={toggleTapBpm}>{tapMode ? 'Save tap' : 'Tap'}</Button></div></div><div className="toolbar-section"><span className="toolbar-section__label">Selection</span><div className="toolbar-group"><Button type="button" variant="ghost" size="pill" onClick={() => selectedNoteId && removeNote(selectedNoteId)} disabled={!selectedNoteId}>Delete</Button></div></div></div></div><EditorTimeline notes={timelineNotes} gridLines={timelineGridLines} bounds={timelineBounds} songTimeMs={songTimeMs} selectedNoteId={selectedNoteId} onTimelineClick={handleTimelineClick} onTimelineWheel={handleTimelineWheel} onSeek={seekSong} onRemoveNote={removeNote} /></div>
           : <Canvas camera={{ position: [0, 0.18, 7.2], fov: 42 }}><Arena attacks={activeAttacks} tuning={tuning} parryPulse={parryPulse} feedback={feedback} padTriggers={padTriggers} onPhaseChange={setPhase} /></Canvas>}
       </section>
       {activeTab !== 'edit' && <div className="status-stack" aria-live="polite">
