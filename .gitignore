@@ -12,6 +12,10 @@ dist
 dist-ssr
 *.local
 
+# Local imported audio/video cache, keep beatmap JSON metadata tracked.
+public/imports/*/audio.mp3
+public/imports/*/source.webm
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
