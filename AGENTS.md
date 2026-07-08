@@ -2,6 +2,10 @@
 
 This file is for coding agents starting fresh in this repo.
 
+## Writing style
+
+Do not use em dashes in agent responses, docs, UI copy, or code comments. Use commas, semicolons, parentheses, or short sentences instead.
+
 ## Project vision
 
 Flow Fight is a rhythm/parry game prototype. The long-term idea is: import any song, generate a draft beatmap from musical events, then let the player/editor refine the beatmap by jamming along. Gameplay is rhythm-game timing plus parry/defense feedback.
