@@ -7,8 +7,9 @@ function joinClassNames(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(' ')
 }
 
-export function Button({ className, variant = 'default', size = 'default', ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant; size?: ButtonSize }) {
-  return <button className={joinClassNames('ui-button', `ui-button--${variant}`, `ui-button--${size}`, className)} {...props} />
+export function Button({ className, variant = 'default', size = 'default', tooltip, shortcut, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant; size?: ButtonSize; tooltip?: string; shortcut?: string }) {
+  const tooltipText = [tooltip, shortcut ? `Shortcut: ${shortcut}` : null].filter(Boolean).join('\n')
+  return <button className={joinClassNames('ui-button', `ui-button--${variant}`, `ui-button--${size}`, className)} data-tooltip={tooltipText || undefined} aria-keyshortcuts={shortcut} {...props} />
 }
 
 export function Card({ className, ...props }: HTMLAttributes<HTMLElement>) {

@@ -181,6 +181,8 @@ async function listImports() {
         title: meta.title ?? 'Imported song',
         sourceUrl: meta.sourceUrl,
         durationMs: meta.durationMs ?? beatmap.durationMs ?? 0,
+        bpm: meta.bpm,
+        beatOffsetMs: meta.beatOffsetMs,
         audioUrl: `/imports/${entry.name}/audio.mp3`,
         beatmapUrl: `/imports/${entry.name}/beatmap.json`,
         noteCount: beatmap.notes?.length ?? 0,
@@ -203,6 +205,21 @@ app.get('/api/imports', async (_req, res) => {
 
 app.get('/api/imports/:songId/beatmaps', async (req, res) => {
   res.json({ beatmaps: await listBeatmaps(req.params.songId) })
+})
+
+app.patch('/api/imports/:songId', async (req, res) => {
+  const songId = req.params.songId
+  const file = path.join(importsDir, songId, 'meta.json')
+  try {
+    const meta = JSON.parse(await readFile(file, 'utf8'))
+    const next = { ...meta }
+    if (Number.isFinite(Number(req.body?.bpm)) && Number(req.body.bpm) > 0) next.bpm = Number(req.body.bpm)
+    if (Number.isFinite(Number(req.body?.beatOffsetMs)) && Number(req.body.beatOffsetMs) >= 0) next.beatOffsetMs = Number(req.body.beatOffsetMs)
+    await writeFile(file, JSON.stringify(next, null, 2))
+    res.json({ song: next })
+  } catch (error) {
+    res.status(404).json({ error: error instanceof Error ? error.message : 'Song not found' })
+  }
 })
 
 app.post('/api/imports/:songId/beatmaps', async (req, res) => {
