@@ -1,59 +1,40 @@
-import { Canvas, useFrame } from '@react-three/fiber'
-import { Text } from '@react-three/drei'
-import { Color } from 'three'
-import type { Group, Mesh, MeshStandardMaterial } from 'three'
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent, type ReactNode, type WheelEvent } from 'react'
+import { Canvas } from '@react-three/fiber'
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type WheelEvent } from 'react'
 import './App.css'
 import { Badge, Button, Card, CardDescription, CardHeader, CardTitle, Disclosure, DisclosureSummary, Field, FieldLabel, Input, Select, Slider, Stack, Tabs, TabsList, TabsTrigger } from './components/ui'
-import { attackPhase, judgeParryTiming, type ParryTimingResult } from './game/timing'
+import { Toolbar } from './components/Toolbar'
+import { EditorTimeline } from './editor/EditorTimeline'
+import { Arena } from './game/Arena'
+import { HitNotify } from './game/HitNotify'
+import { judgeParryTiming, type ParryTimingResult } from './game/timing'
+import {
+  beatOffsetStorageKey,
+  bpmStorageKey,
+  defaultControls,
+  gamepadButtonLabels,
+  initialTuning,
+  laneColor,
+  lanes,
+  makeBeatmapAttack,
+  makeIdlePattern,
+  normalizeBeatmap,
+  readStoredNumber,
+  timelineLaneAreaHeightPx,
+  timelineLaneTopPx,
+  type Attack,
+  type Beatmap,
+  type BeatmapNote,
+  type FeedbackEvent,
+  type GridDivision,
+  type ImportResult,
+  type Lane,
+  type LaneControls,
+  type LoopMarkers,
+  type PlayStats,
+  type SavedBeatmap,
+  type Tuning,
+} from './game/model'
 
-type Tuning = { parryWindowMs: number; perfectWindowMs: number; telegraphMs: number; recoveryMs: number; inputOffsetMs: number }
-type Attack = { id: number; startMs: number; impactMs: number; travelMs: number; lane?: BeatmapNote['lane']; durationMs?: number }
-type FeedbackEvent = { id: number; kind: 'good-parry' | 'perfect-parry' | 'miss'; startedAtMs: number; lane?: BeatmapNote['lane'] }
-type SavedBeatmap = { id: string; title: string; difficulty: number; updatedAt?: string; noteCount: number; url: string }
-type ImportResult = { id: string; title: string; durationMs: number; audioUrl: string; beatmapUrl: string; noteCount: number; sourceUrl?: string; cached?: boolean; bpm?: number; beatOffsetMs?: number; beatmaps?: SavedBeatmap[] }
-type Lane = 'kick' | 'snare' | 'low' | 'mid' | 'high'
-type BeatmapNote = { id: string; impactTimeMs: number; rawTimeMs?: number; durationMs?: number; lane: Lane; strength: number; source: string; resolved?: boolean }
-type Beatmap = { id: string; songId?: string; title: string; difficulty?: number; version?: number; bpm?: number; beatOffsetMs?: number; durationMs: number; notes: BeatmapNote[] }
-type PlayStats = { hit: number; perfect: number; good: number; missed: number; streak: number; bestStreak: number }
-type GridDivision = 4 | 8 | 16 | 32 | 64
-type LaneControls = Record<Lane, { keyboard: string; gamepadButton: number }>
-type TimelineBounds = { startMs: number; endMs: number; spanMs: number }
-type TimelineGridLine = { left: number; strength: 'bar' | 'beat' | 'sub'; label?: string }
-type LoopMarkers = { startMs: number | null; endMs: number | null }
-
-const initialTuning: Tuning = { parryWindowMs: 80, perfectWindowMs: 40, telegraphMs: 1150, recoveryMs: 260, inputOffsetMs: 0 }
-const clamp01 = (value: number) => Math.min(1, Math.max(0, value))
-const laneY: Record<Lane, number> = { kick: -0.58, snare: -0.32, low: 0.18, mid: 0.48, high: 0.78 }
-const laneColor: Record<Lane, string> = {
-  kick: '#4da3ff',
-  snare: '#ff5570',
-  low: '#83ff70',
-  mid: '#b56cff',
-  high: '#ff9f43',
-}
-const lanes = ['kick', 'snare', 'low', 'mid', 'high'] as const
-const defaultControls: LaneControls = {
-  kick: { keyboard: 'Space', gamepadButton: 0 },
-  snare: { keyboard: 'KeyW', gamepadButton: 1 },
-  low: { keyboard: 'ArrowLeft', gamepadButton: 14 },
-  mid: { keyboard: 'ArrowUp', gamepadButton: 12 },
-  high: { keyboard: 'ArrowRight', gamepadButton: 15 },
-}
-const gamepadButtonLabels: Record<number, string> = { 0: 'A', 1: 'B', 2: 'X', 3: 'Y', 4: 'LB', 5: 'RB', 6: 'LT', 7: 'RT', 12: 'D-pad Up', 13: 'D-pad Down', 14: 'D-pad Left', 15: 'D-pad Right' }
-const timelineRulerHeightPx = 28
-const timelineLaneHeightPx = 58
-const timelineLaneTopPx = timelineRulerHeightPx
-const timelineLaneAreaHeightPx = lanes.length * timelineLaneHeightPx
-const bpmStorageKey = (songId?: string, beatmapId?: string) => songId ? `flow-fight:bpm:${songId}:${beatmapId ?? 'song'}` : null
-const beatOffsetStorageKey = (songId?: string, beatmapId?: string) => songId ? `flow-fight:beat-offset:${songId}:${beatmapId ?? 'song'}` : null
-const readStoredNumber = (key: string | null) => {
-  if (!key) return null
-  const stored = localStorage.getItem(key)
-  if (stored === null) return null
-  const value = Number(stored)
-  return Number.isFinite(value) ? value : null
-}
 function isTextEditingTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false
   return Boolean(target.closest('input, textarea, select, [contenteditable="true"], [role="textbox"], [role="combobox"], [role="spinbutton"]'))
@@ -62,283 +43,6 @@ function isTextEditingTarget(target: EventTarget | null) {
 function isEditingTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false
   return Boolean(target.closest('input, textarea, select, [contenteditable="true"], [role="textbox"], [role="combobox"], [role="spinbutton"], [role="slider"]'))
-}
-
-function normalizeLane(lane: unknown): Lane {
-  if (lane === 'left') return 'low'
-  if (lane === 'up' || lane === 'down') return 'mid'
-  if (lane === 'right') return 'high'
-  if (lane === 'kick' || lane === 'snare' || lane === 'low' || lane === 'mid' || lane === 'high') return lane
-  return 'mid'
-}
-
-function normalizeBeatmap(beatmap: Beatmap): Beatmap {
-  return { ...beatmap, beatOffsetMs: beatmap.beatOffsetMs ?? 0, notes: beatmap.notes.map((note) => ({ ...note, lane: normalizeLane(note.lane) })) }
-}
-
-function makeBeatmapAttack(timeUntilImpactMs: number, lane: BeatmapNote['lane'], durationMs?: number): Attack {
-  const now = performance.now()
-  const travelMs = Math.max(120, timeUntilImpactMs)
-  return { id: Math.random(), startMs: now, travelMs, impactMs: now + travelMs, lane, durationMs } as Attack
-}
-
-function makeIdlePattern(): Attack[] {
-  const now = performance.now()
-  const beatMs = 520
-  const firstImpactMs = 900
-  return [
-    { id: Math.random(), startMs: now, travelMs: firstImpactMs, impactMs: now + firstImpactMs, lane: 'kick' },
-    { id: Math.random(), startMs: now + beatMs, travelMs: firstImpactMs, impactMs: now + firstImpactMs + beatMs, lane: 'snare' },
-    { id: Math.random(), startMs: now + beatMs * 2, travelMs: firstImpactMs, impactMs: now + firstImpactMs + beatMs * 2, lane: 'kick' },
-    { id: Math.random(), startMs: now + beatMs * 3, travelMs: firstImpactMs, impactMs: now + firstImpactMs + beatMs * 3, lane: 'snare' },
-  ]
-}
-
-function ProjectileVisual({ attack, hidden }: { attack: Attack; hidden: boolean }) {
-  const projectile = useRef<Mesh>(null)
-  const ghosts = useRef<Array<Mesh | null>>([])
-  const lane = attack.lane ?? 'mid'
-  const color = laneColor[lane]
-  const isHold = (attack.durationMs ?? 0) >= 200
-
-  useFrame(() => {
-    const now = performance.now()
-    const startX = 1.6
-    const shieldRightEdgeX = -0.96
-    const projectileRadius = 0.09
-    const impactX = shieldRightEdgeX + projectileRadius
-    const travel = clamp01((now - attack.startMs) / attack.travelMs)
-    const x = startX + (impactX - startX) * travel
-    const y = laneY[lane]
-    const impactAge = now - attack.impactMs
-
-    if (projectile.current) {
-      projectile.current.position.x = x
-      projectile.current.position.y = y
-      projectile.current.visible = !hidden && now >= attack.startMs && impactAge < 120
-    }
-
-    ghosts.current.forEach((ghost, index) => {
-      if (!ghost) return
-      const lagMs = 55 * (index + 1)
-      const ghostTravel = clamp01((now - lagMs - attack.startMs) / attack.travelMs)
-      ghost.position.x = startX + (impactX - startX) * ghostTravel
-      ghost.position.y = laneY[lane]
-      ghost.visible = !hidden && now >= attack.startMs + lagMs && impactAge < 40
-    })
-  })
-
-  return (
-    <>
-      {[0.22, 0.14, 0.08].map((opacity, index) => (
-        <mesh key={opacity} ref={(mesh) => { ghosts.current[index] = mesh }} visible={false} position={[1.6, laneY[lane], 0.06]}>
-          <sphereGeometry args={[(isHold ? 0.15 : 0.09) - index * 0.014, 24, 12]} />
-          <meshStandardMaterial color={color} emissive={color} transparent opacity={opacity} />
-        </mesh>
-      ))}
-      <mesh ref={projectile} position={[1.6, laneY[lane], 0.12]} visible={false}>
-        <sphereGeometry args={[isHold ? 0.18 : 0.09, 32, 16]} />
-        <meshStandardMaterial color={color} emissive={color} />
-      </mesh>
-    </>
-  )
-}
-
-function EditorTimeline({
-  notes,
-  gridLines,
-  bounds,
-  songTimeMs,
-  selectedNoteId,
-  loopMarkers,
-  onTimelineClick,
-  onTimelineWheel,
-  onSeek,
-  onLoopRulerClick,
-  onRemoveNote,
-}: {
-  notes: Array<BeatmapNote & { pending: boolean }>
-  gridLines: TimelineGridLine[]
-  bounds: TimelineBounds
-  songTimeMs: number
-  selectedNoteId: string | null
-  loopMarkers: LoopMarkers
-  onTimelineClick: (event: MouseEvent<HTMLDivElement>) => void
-  onTimelineWheel: (event: WheelEvent<HTMLDivElement>) => void
-  onSeek: (timeMs: number, bypassSnap?: boolean) => void
-  onLoopRulerClick: (timeMs: number, marker: 'start' | 'end', bypassSnap?: boolean) => void
-  onRemoveNote: (noteId: string) => void
-}) {
-  const playheadLeft = ((songTimeMs - bounds.startMs) / bounds.spanMs) * 100
-  const loopStartLeft = loopMarkers.startMs === null ? null : ((loopMarkers.startMs - bounds.startMs) / bounds.spanMs) * 100
-  const loopEndLeft = loopMarkers.endMs === null ? null : ((loopMarkers.endMs - bounds.startMs) / bounds.spanMs) * 100
-  const hasVisibleLoopRange = loopStartLeft !== null && loopEndLeft !== null && loopStartLeft >= 0 && loopEndLeft <= 100 && loopEndLeft > loopStartLeft
-  const seekFromPointer = (clientX: number, width: number, left: number, bypassSnap = false) => {
-    const xRatio = clamp01((clientX - left) / width)
-    onSeek(bounds.startMs + xRatio * bounds.spanMs, bypassSnap)
-  }
-  const dragPlayhead = (event: PointerEvent<HTMLDivElement>) => {
-    const rect = event.currentTarget.parentElement?.getBoundingClientRect()
-    if (!rect) return
-    seekFromPointer(event.clientX, rect.width, rect.left, event.shiftKey)
-  }
-  const handleTimelineRootClick = (event: MouseEvent<HTMLDivElement>) => {
-    const rect = event.currentTarget.getBoundingClientRect()
-    const yPx = event.clientY - rect.top
-    if (yPx < timelineLaneTopPx) {
-      const xRatio = clamp01((event.clientX - rect.left) / rect.width)
-      const timeMs = bounds.startMs + xRatio * bounds.spanMs
-      if (event.ctrlKey) onLoopRulerClick(timeMs, event.altKey ? 'end' : 'start', event.shiftKey)
-      else seekFromPointer(event.clientX, rect.width, rect.left, event.shiftKey)
-      return
-    }
-    onTimelineClick(event)
-  }
-
-  return (
-    <div className="timeline timeline--expanded" onClick={handleTimelineRootClick} onWheel={onTimelineWheel}>
-      <div className="timeline-ruler">{gridLines.filter((line) => line.label).map((line, index) => <span key={`label-${line.left}-${index}`} className={`timeline-ruler__mark timeline-ruler__mark--${line.strength}`} style={{ left: `${line.left}%` }}>{line.label}</span>)}</div>
-      {hasVisibleLoopRange && <div className="timeline-loop-range" style={{ left: `${loopStartLeft}%`, width: `${loopEndLeft - loopStartLeft}%` }} />}
-      {loopStartLeft !== null && loopStartLeft >= 0 && loopStartLeft <= 100 && <div className="timeline-loop-marker timeline-loop-marker--start" style={{ left: `${loopStartLeft}%` }} title="Loop start" />}
-      {loopEndLeft !== null && loopEndLeft >= 0 && loopEndLeft <= 100 && <div className="timeline-loop-marker timeline-loop-marker--end" style={{ left: `${loopEndLeft}%` }} title="Loop stop" />}
-      <div className="timeline-grid">{gridLines.map((line, index) => <span key={`${line.left}-${index}`} className={`timeline-grid__line timeline-grid__line--${line.strength}`} style={{ left: `${line.left}%` }} />)}</div>
-      <div className="timeline-labels">{lanes.map((lane) => <span key={lane}>{lane}</span>)}</div>
-      {playheadLeft >= 0 && playheadLeft <= 100 && <div className="playhead" style={{ left: `${playheadLeft}%` }}><div className="playhead-handle" title="Drag to seek" onClick={(event) => event.stopPropagation()} onPointerDown={(event) => { event.stopPropagation(); event.currentTarget.setPointerCapture(event.pointerId); dragPlayhead(event) }} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) dragPlayhead(event) }} onPointerUp={(event) => { event.stopPropagation(); if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId) }} /></div>}
-      {notes.filter((note) => note.impactTimeMs >= bounds.startMs && note.impactTimeMs <= bounds.endMs).map((note) => <i key={`stage-${note.pending ? 'pending' : 'saved'}-${note.id}`} className={`${note.pending ? 'pending ' : ''}${selectedNoteId === note.id ? 'selected' : ''}`} onClick={(event) => { event.stopPropagation(); onRemoveNote(note.id) }} title={`Remove ${note.lane} ${Math.round(note.impactTimeMs)}ms`} style={{ left: `${((note.impactTimeMs - bounds.startMs) / bounds.spanMs) * 100}%`, top: `${timelineLaneTopPx + lanes.indexOf(note.lane) * timelineLaneHeightPx + 14}px`, width: note.durationMs ? `${Math.max(8, (note.durationMs / bounds.spanMs) * 100)}%` : undefined, background: laneColor[note.lane] }} />)}
-    </div>
-  )
-}
-
-function Toolbar({ children }: { children: ReactNode }) {
-  return <div className="edit-toolbar">{children}</div>
-}
-
-function HitNotify({ feedback }: { feedback: FeedbackEvent | null }) {
-  if (!feedback) return null
-  const isPerfect = feedback.kind === 'perfect-parry'
-  const isGood = feedback.kind === 'good-parry'
-  return (
-    <div key={feedback.id} className={`hit-notify ${isPerfect ? 'hit-notify--perfect' : isGood ? 'hit-notify--good' : 'hit-notify--miss'}`} aria-live="polite">
-      <span className="hit-notify__icon">{isGood || isPerfect ? '✓' : '×'}</span>
-      <span className="hit-notify__label">{isPerfect ? 'Perfect' : isGood ? 'Hit' : 'Miss'}</span>
-    </div>
-  )
-}
-
-function Arena({ attacks, tuning, parryPulse, feedback, padTriggers, onPhaseChange }: { attacks: Attack[]; tuning: Tuning; parryPulse: number; feedback: FeedbackEvent | null; padTriggers: Record<Lane, number>; onPhaseChange: (phase: string) => void }) {
-  const impactFlash = useRef<Mesh>(null)
-  const cannonRefs = useRef<Partial<Record<BeatmapNote['lane'], Group | null>>>({})
-  const parryShield = useRef<Mesh>(null)
-  const padRefs = useRef<Partial<Record<BeatmapNote['lane'], Mesh | null>>>({})
-  const padMaterials = useRef<Partial<Record<BeatmapNote['lane'], MeshStandardMaterial | null>>>({})
-  const burst = useRef<Group>(null)
-  const primaryAttack = attacks[0]
-
-  useFrame(() => {
-    const now = performance.now()
-    const attack = primaryAttack
-    onPhaseChange(attack ? (attackPhase(now, attack.startMs, attack.impactMs, tuning.recoveryMs) === 'windup' ? 'incoming' : attackPhase(now, attack.startMs, attack.impactMs, tuning.recoveryMs)) : 'queued')
-
-    const impactAge = attack ? now - attack.impactMs : Number.POSITIVE_INFINITY
-    const parryAge = now - parryPulse
-    const feedbackAge = feedback ? now - feedback.startedAtMs : Number.POSITIVE_INFINITY
-    const isSuccessfulParry = feedback?.kind === 'good-parry' || feedback?.kind === 'perfect-parry'
-
-    Object.entries(laneColor).forEach(([lane]) => {
-      const typedLane = lane as BeatmapNote['lane']
-      const latestShot = attacks
-        .filter((candidate) => (candidate.lane ?? 'mid') === typedLane && now >= candidate.startMs)
-        .sort((a, b) => b.startMs - a.startMs)[0]
-      const shotAge = latestShot ? now - latestShot.startMs : Number.POSITIVE_INFINITY
-      const trigger = shotAge >= 0 && shotAge < 130 ? Math.sin((1 - shotAge / 130) * Math.PI) : 0
-      const cannon = cannonRefs.current[typedLane]
-      if (cannon) cannon.position.x = 1.55 - trigger * 0.075
-    })
-
-    if (impactFlash.current) {
-      const visible = impactAge >= 0 && impactAge < 130
-      const flash = visible ? 1 - impactAge / 130 : 0
-      impactFlash.current.scale.setScalar(0.45 + flash * 1.8)
-      impactFlash.current.visible = visible
-      impactFlash.current.position.y = attack ? laneY[attack.lane ?? 'mid'] : 0.06
-    }
-    if (parryShield.current) {
-      const duration = feedback?.kind === 'perfect-parry' ? 360 : 210
-      const visible = parryAge >= 0 && parryAge < duration
-      const pulse = visible ? 1 - parryAge / duration : 0
-      parryShield.current.visible = visible
-      parryShield.current.scale.setScalar(0.82 + pulse * (feedback?.kind === 'perfect-parry' ? 0.72 : 0.42))
-    }
-
-    const shieldFlashDurationMs = 200
-    const shieldFlash = feedbackAge < shieldFlashDurationMs && isSuccessfulParry ? Math.pow(Math.max(0, Math.sin((feedbackAge / shieldFlashDurationMs) * Math.PI * 4)), 0.35) * (1 - feedbackAge / shieldFlashDurationMs * 0.35) : 0
-    Object.entries(laneColor).forEach(([lane, color]) => {
-      const typedLane = lane as BeatmapNote['lane']
-      const isHitLane = feedback?.lane === typedLane
-      const padFlash = isHitLane ? shieldFlash : 0
-      const pad = padRefs.current[typedLane]
-      const material = padMaterials.current[typedLane]
-      const triggerAge = now - (padTriggers[typedLane] || -Infinity)
-      const trigger = triggerAge >= 0 && triggerAge < 130 ? Math.sin((1 - triggerAge / 130) * Math.PI) : 0
-      if (pad) {
-        pad.position.x = -1.02 + trigger * 0.075
-        pad.scale.y = 1 + padFlash * 0.18
-        pad.scale.x = 1 + padFlash * 0.12
-      }
-      if (material) {
-        const baseColor = new Color(color)
-        const flashColor = new Color(feedback?.kind === 'perfect-parry' ? '#fff4a3' : '#ffd166')
-        const baseEmissive = new Color(color).multiplyScalar(0.35)
-        const flashEmissive = new Color(feedback?.kind === 'perfect-parry' ? '#ffdd00' : '#ff9500')
-        material.color.copy(baseColor.lerp(flashColor, padFlash))
-        material.emissive.copy(baseEmissive.lerp(flashEmissive, padFlash))
-      }
-    })
-    if (burst.current) {
-      const visible = feedbackAge >= 0 && feedbackAge < 360 && isSuccessfulParry
-      const pulse = visible ? 1 - feedbackAge / 360 : 0
-      burst.current.visible = visible
-      burst.current.scale.setScalar((feedback?.kind === 'perfect-parry' ? 1.0 : 0.72) * (0.18 + (1 - pulse) * 1.25))
-      burst.current.rotation.z = feedbackAge / 150
-    }
-  })
-
-  return (
-    <>
-      <color attach="background" args={["#070812"]} />
-      <ambientLight intensity={0.85} />
-      <directionalLight position={[0, 4, 5]} intensity={2.5} />
-      <mesh position={[0, -0.92, 0]}><boxGeometry args={[6.2, 0.04, 1.4]} /><meshStandardMaterial color="#1d2540" /></mesh>
-      {Object.entries(laneColor).map(([lane, color]) => {
-        const typedLane = lane as BeatmapNote['lane']
-        return (
-          <group key={lane}>
-            <mesh ref={(mesh) => { padRefs.current[typedLane] = mesh }} position={[-1.02, laneY[typedLane], 0.11]}>
-              <boxGeometry args={[0.065, 0.18, 0.12]} />
-              <meshStandardMaterial ref={(material) => { padMaterials.current[typedLane] = material }} color={color} emissive={color} />
-            </mesh>
-            <Text position={[-1.23, laneY[typedLane] - 0.01, 0.12]} fontSize={0.07} color="#edf3ff" anchorX="center">{typedLane.toUpperCase()}</Text>
-          </group>
-        )
-      })}
-      <mesh ref={parryShield} position={[-0.98, laneY[feedback?.lane ?? 'mid'], 0.16]} visible={false}><torusGeometry args={[0.18, 0.018, 12, 48]} /><meshStandardMaterial color="#83ff70" emissive="#34d399" transparent opacity={0.9} /></mesh>
-      {Object.entries(laneColor).map(([lane, color]) => {
-        const typedLane = lane as BeatmapNote['lane']
-        return (
-          <group key={`cannon-${lane}`} ref={(group) => { cannonRefs.current[typedLane] = group }} position={[1.55, laneY[typedLane], 0.08]}>
-            <mesh><boxGeometry args={[0.23, 0.16, 0.11]} /><meshStandardMaterial color={color} emissive={color} /></mesh>
-          </group>
-        )
-      })}
-      {attacks.map((attack) => <ProjectileVisual key={attack.id} attack={attack} hidden={false} />)}
-      <mesh ref={impactFlash} position={[-0.98, 0.06, 0.18]} visible={false}><ringGeometry args={[0.12, 0.15, 48]} /><meshStandardMaterial color="#fff1b8" emissive="#ffd166" transparent opacity={0.95} /></mesh>
-      <group ref={burst} position={[-0.98, laneY[feedback?.lane ?? 'mid'], 0.22]} visible={false}>
-        <mesh><ringGeometry args={[0.18, 0.22, 64]} /><meshStandardMaterial color={feedback?.kind === 'perfect-parry' ? '#ffffff' : '#83ff70'} emissive="#34d399" transparent opacity={0.62} /></mesh>
-        <mesh rotation={[0, 0, Math.PI / 4]}><boxGeometry args={[0.48, 0.028, 0.035]} /><meshStandardMaterial color={feedback?.kind === 'perfect-parry' ? '#ffffff' : '#83ff70'} emissive="#34d399" transparent opacity={0.55} /></mesh>
-        <mesh rotation={[0, 0, -Math.PI / 4]}><boxGeometry args={[0.48, 0.028, 0.035]} /><meshStandardMaterial color={feedback?.kind === 'perfect-parry' ? '#ffffff' : '#83ff70'} emissive="#34d399" transparent opacity={0.55} /></mesh>
-      </group>
-    </>
-  )
 }
 
 function App() {

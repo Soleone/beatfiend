@@ -6,6 +6,12 @@ This file is for coding agents starting fresh in this repo.
 
 Do not use em dashes in agent responses, docs, UI copy, or code comments. Use commas, semicolons, parentheses, or short sentences instead.
 
+## Code quality and architecture
+
+Do not let the app become sloppy or unmaintainable. Prefer clear, typed modules with focused responsibilities over large catch-all files. Extract reusable UI, game rendering, editor widgets, timing/model helpers, and server helpers when a section grows enough to obscure intent. Keep abstractions pragmatic: avoid premature frameworks, but do not keep unrelated behavior in one component just because it was faster to write there.
+
+When changing code, leave it easier to navigate than you found it. Use descriptive names, small pure helpers for state transformations, and colocated components for feature-specific UI. Shared constants and types should live in explicit modules, not be duplicated across the app.
+
 ## Project vision
 
 Flow Fight is a tiny beatmap DAW with a rhythm/parry playtest mode. The long-term idea is: import any song, align a 4/4 beat grid, generate or record a draft beatmap from musical events, refine the beatmap by jamming along, then playtest it with rhythm-game timing plus parry/defense feedback.
