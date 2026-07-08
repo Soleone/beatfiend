@@ -1,6 +1,6 @@
 export type Lane = 'kick' | 'snare' | 'low' | 'mid' | 'high'
 export type Tuning = { parryWindowMs: number; perfectWindowMs: number; telegraphMs: number; recoveryMs: number; inputOffsetMs: number }
-export type Attack = { id: number; startMs: number; impactMs: number; travelMs: number; lane?: Lane; durationMs?: number }
+export type Attack = { id: number; startMs: number; impactMs: number; travelMs: number; lane?: Lane; durationMs?: number; noteId?: string; scheduleKey?: string }
 export type FeedbackEvent = { id: number; kind: 'good-parry' | 'perfect-parry' | 'miss'; startedAtMs: number; lane?: Lane }
 export type SavedBeatmap = { id: string; title: string; difficulty: number; updatedAt?: string; noteCount: number; url: string }
 export type ImportResult = { id: string; title: string; durationMs: number; audioUrl: string; beatmapUrl: string; noteCount: number; sourceUrl?: string; cached?: boolean; bpm?: number; beatOffsetMs?: number; beatmaps?: SavedBeatmap[] }
@@ -62,10 +62,10 @@ export function normalizeBeatmap(beatmap: Beatmap): Beatmap {
   return { ...beatmap, beatOffsetMs: beatmap.beatOffsetMs ?? 0, notes: beatmap.notes.map((note) => ({ ...note, lane: normalizeLane(note.lane) })) }
 }
 
-export function makeBeatmapAttack(timeUntilImpactMs: number, lane: Lane, durationMs?: number): Attack {
+export function makeBeatmapAttack(timeUntilImpactMs: number, lane: Lane, durationMs?: number, noteId?: string, scheduleKey?: string): Attack {
   const now = performance.now()
   const travelMs = Math.max(120, timeUntilImpactMs)
-  return { id: Math.random(), startMs: now, travelMs, impactMs: now + travelMs, lane, durationMs }
+  return { id: Math.random(), startMs: now, travelMs, impactMs: now + travelMs, lane, durationMs, noteId, scheduleKey }
 }
 
 export function makeIdlePattern(): Attack[] {

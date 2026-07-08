@@ -90,11 +90,17 @@ function App() {
   const [padTriggers, setPadTriggers] = useState<Record<Lane, number>>({ kick: 0, snare: 0, low: 0, mid: 0, high: 0 })
   const audioRef = useRef<HTMLAudioElement>(null)
   const scheduledNoteIds = useRef(new Set<string>())
+  const loopCycle = useRef(0)
+  const isLoopSeeking = useRef(false)
   const heldStarts = useRef<Partial<Record<Lane, number>>>({})
   const previousGamepadButtons = useRef(new Set<number>())
   const calibrationHydrated = useRef(false)
   const persistedCalibration = useRef<string | null>(null)
   const restoredSongId = useRef<string | null>(localStorage.getItem('flow-fight:selected-song'))
+  const resetScheduledNotes = useCallback(() => {
+    scheduledNoteIds.current.clear()
+    loopCycle.current += 1
+  }, [])
 
   const loadImports = useCallback(async () => {
     try {
@@ -129,13 +135,13 @@ function App() {
       setBeatOffsetMs(nextBeatOffsetMs)
       persistedCalibration.current = `${song.id}:${nextBpm}:${nextBeatOffsetMs}`
       calibrationHydrated.current = true
-      scheduledNoteIds.current.clear()
+      resetScheduledNotes()
       setLoopMarkers({ startMs: null, endMs: null })
       setImportStatus(`Loaded ${song.noteCount} notes from cache`)
     } catch (error) {
       setImportStatus(error instanceof Error ? error.message : 'Failed to load song')
     }
-  }, [])
+  }, [resetScheduledNotes])
 
   useEffect(() => { void loadImports() }, [loadImports])
 
@@ -179,8 +185,8 @@ function App() {
   }, [beatOffsetMs, gridMs, quantize])
 
   const nextAttack = useCallback(() => {
-    setLastResult(null); setLastAutoMiss(false); setFeedback(null); scheduledNoteIds.current.clear(); setActiveAttacks(makeIdlePattern())
-  }, [tuning])
+    setLastResult(null); setLastAutoMiss(false); setFeedback(null); resetScheduledNotes(); setActiveAttacks(makeIdlePattern())
+  }, [resetScheduledNotes])
 
   const parry = useCallback((lane: BeatmapNote['lane'] = 'mid') => {
     const inputTimeMs = performance.now()
@@ -297,31 +303,57 @@ function App() {
   }, [activeAttacks.length, isSongPlaying, tuning])
 
   useEffect(() => {
+    const loopEndEpsilonMs = 0.5
+    const loopSeekGuardMs = 6
     const timer = window.setInterval(() => {
       const audio = audioRef.current
       if (!audio || audio.paused) return
+      const now = performance.now()
       let songTimeMs = audio.currentTime * 1000
-      if (loopMarkers.startMs !== null && loopMarkers.endMs !== null && loopMarkers.endMs > loopMarkers.startMs && songTimeMs >= loopMarkers.endMs) {
-        songTimeMs = loopMarkers.startMs
+      const hasLoop = loopMarkers.startMs !== null && loopMarkers.endMs !== null && loopMarkers.endMs > loopMarkers.startMs
+      const loopStartMs = loopMarkers.startMs ?? 0
+      const loopEndMs = loopMarkers.endMs ?? 0
+      if (hasLoop && songTimeMs >= loopEndMs - loopSeekGuardMs) {
+        songTimeMs = loopStartMs
+        isLoopSeeking.current = true
         audio.currentTime = songTimeMs / 1000
-        scheduledNoteIds.current.clear()
-        setActiveAttacks([])
+        loopCycle.current += 1
       }
       setSongTimeMs(songTimeMs)
       if (activeTab === 'editor') setTimelineCenterMs(songTimeMs)
       if (!beatmap) return
       const spawnLeadMs = tuning.telegraphMs
-      const dueNotes = beatmap.notes.filter((note) => {
+      const dueNotes = beatmap.notes.flatMap((note) => {
+        if (hasLoop) {
+          if (note.impactTimeMs < loopStartMs || note.impactTimeMs >= loopEndMs - loopEndEpsilonMs) return []
+          const directTimeUntilImpactMs = note.impactTimeMs - songTimeMs
+          const scheduleCycle = directTimeUntilImpactMs > 0 ? loopCycle.current : loopCycle.current + 1
+          const timeUntilImpactMs = directTimeUntilImpactMs > 0 ? directTimeUntilImpactMs : (loopEndMs - songTimeMs) + (note.impactTimeMs - loopStartMs)
+          const scheduleKey = `${note.id}:${scheduleCycle}`
+          return timeUntilImpactMs > 0 && timeUntilImpactMs <= spawnLeadMs && !scheduledNoteIds.current.has(scheduleKey)
+            ? [{ note, timeUntilImpactMs, scheduleKey }]
+            : []
+        }
         const timeUntilImpactMs = note.impactTimeMs - songTimeMs
-        return !scheduledNoteIds.current.has(note.id) && timeUntilImpactMs > 0 && timeUntilImpactMs <= spawnLeadMs
+        const scheduleKey = note.id
+        return timeUntilImpactMs > 0 && timeUntilImpactMs <= spawnLeadMs && !scheduledNoteIds.current.has(scheduleKey)
+          ? [{ note, timeUntilImpactMs, scheduleKey }]
+          : []
       }).slice(0, 6)
       if (dueNotes.length === 0) return
-      dueNotes.forEach((note) => scheduledNoteIds.current.add(note.id))
       setLastResult(null); setLastAutoMiss(false); setFeedback(null)
-      setActiveAttacks((attacks) => [...attacks, ...dueNotes.map((note) => makeBeatmapAttack(note.impactTimeMs - songTimeMs, note.lane, note.durationMs))].sort((a, b) => a.impactMs - b.impactMs).slice(0, 12))
-    }, 25)
+      setActiveAttacks((attacks) => {
+        const activeScheduleKeys = new Set(attacks.map((attack) => attack.scheduleKey).filter(Boolean))
+        const attacksToAdd = dueNotes.filter(({ scheduleKey }) => !activeScheduleKeys.has(scheduleKey))
+        attacksToAdd.forEach(({ scheduleKey }) => scheduledNoteIds.current.add(scheduleKey))
+        return [...attacks, ...attacksToAdd.map(({ note, timeUntilImpactMs, scheduleKey }) => makeBeatmapAttack(timeUntilImpactMs, note.lane, note.durationMs, note.id, scheduleKey))]
+          .filter((attack) => attack.impactMs >= now - tuning.parryWindowMs)
+          .sort((a, b) => a.impactMs - b.impactMs)
+          .slice(0, 12)
+      })
+    }, 10)
     return () => window.clearInterval(timer)
-  }, [activeTab, beatmap, loopMarkers, tuning.telegraphMs])
+  }, [activeTab, beatmap, loopMarkers, tuning.parryWindowMs, tuning.telegraphMs])
 
   const importYoutube = useCallback(async () => {
     const url = youtubeUrl.trim(); if (!url) return
@@ -359,8 +391,8 @@ function App() {
         .filter((note, index, all) => index === 0 || note.lane !== all[index - 1].lane || Math.abs(note.impactTimeMs - all[index - 1].impactTimeMs) > 45)
       return { ...current, notes: merged }
     })
-    scheduledNoteIds.current.clear()
-  }, [armedLanes, recordMode, recordStartMs, recordedNotes])
+    resetScheduledNotes()
+  }, [armedLanes, recordMode, recordStartMs, recordedNotes, resetScheduledNotes])
 
   const saveBeatmap = useCallback(async (saveAsNew = false) => {
     if (!beatmap || !importedSong) return
@@ -396,8 +428,8 @@ function App() {
     setBpm(nextBpm)
     setBeatOffsetMs(nextBeatOffsetMs)
     if (songId) persistedCalibration.current = `${songId}:${nextBpm}:${nextBeatOffsetMs}`
-    scheduledNoteIds.current.clear()
-  }, [importedSong?.id, songBeatmaps])
+    resetScheduledNotes()
+  }, [importedSong?.id, resetScheduledNotes, songBeatmaps])
 
   const createBlankBeatmap = useCallback(() => {
     if (!importedSong) return
@@ -405,14 +437,14 @@ function App() {
     setBeatmap({ id: `new-${Date.now().toString(36)}`, songId: importedSong.id, title, difficulty, bpm, beatOffsetMs, durationMs: importedSong.durationMs, notes: [] })
     setMapTitle(title)
     setRecordedNotes([])
-    scheduledNoteIds.current.clear()
-  }, [beatOffsetMs, bpm, difficulty, importedSong])
+    resetScheduledNotes()
+  }, [beatOffsetMs, bpm, difficulty, importedSong, resetScheduledNotes])
 
   const clearBeatmapEvents = useCallback(() => {
     setBeatmap((current) => current ? { ...current, notes: [] } : current)
     setRecordedNotes([])
-    scheduledNoteIds.current.clear()
-  }, [])
+    resetScheduledNotes()
+  }, [resetScheduledNotes])
 
   const exportBeatmap = useCallback(() => {
     if (!beatmap) return
@@ -431,12 +463,12 @@ function App() {
     const nextTimeMs = Math.min(Math.max(0, timeMs), durationMs || Math.max(0, timeMs))
     if (audio) audio.currentTime = nextTimeMs / 1000
     setSongTimeMs(nextTimeMs)
-    scheduledNoteIds.current.clear()
+    resetScheduledNotes()
     setActiveAttacks([])
     setLastResult(null)
     setLastAutoMiss(false)
     setFeedback(null)
-  }, [beatmap?.durationMs, importedSong?.durationMs])
+  }, [beatmap?.durationMs, importedSong?.durationMs, resetScheduledNotes])
   const snapTimelineTime = useCallback((timeMs: number, bypassSnap = false) => quantize && !bypassSnap ? beatOffsetMs + Math.round((timeMs - beatOffsetMs) / gridMs) * gridMs : timeMs, [beatOffsetMs, gridMs, quantize])
   const seekTimeline = useCallback((timeMs: number, bypassSnap = false) => {
     seekSong(Math.max(0, snapTimelineTime(timeMs, bypassSnap)))
@@ -463,13 +495,13 @@ function App() {
     audio.currentTime = restartMs / 1000
     setSongTimeMs(restartMs)
     setTimelineCenterMs(restartMs)
-    scheduledNoteIds.current.clear()
+    resetScheduledNotes()
     setActiveAttacks([])
     setStats({ hit: 0, perfect: 0, good: 0, missed: 0, streak: 0, bestStreak: 0 })
     setLastResult(null)
     setLastAutoMiss(false)
     void audio.play()
-  }, [beatOffsetMs, loopMarkers.startMs])
+  }, [beatOffsetMs, loopMarkers.startMs, resetScheduledNotes])
 
   const rows = useMemo(() => [
     ['Parry ±', tuning.parryWindowMs, 20, 260, 'ms', 'parryWindowMs'], ['Perfect ±', tuning.perfectWindowMs, 10, 120, 'ms', 'perfectWindowMs'], ['Avg travel', tuning.telegraphMs, 450, 2000, 'ms', 'telegraphMs'], ['Input offset', tuning.inputOffsetMs, -80, 80, 'ms', 'inputOffsetMs'],
@@ -655,7 +687,7 @@ function App() {
         <div className="toast"><strong style={{ color: gradeColor }}>{judgementText}</strong></div>
         <div className="toast"><strong style={{ color: timingColor }}>{lastAutoMiss ? '-' : deltaText}</strong></div>
       </div>}
-      {importedSong && <audio ref={audioRef} src={importedSong.audioUrl} onPlay={() => setIsSongPlaying(true)} onPause={() => setIsSongPlaying(false)} onEnded={() => setIsSongPlaying(false)} onTimeUpdate={(event) => setSongTimeMs(event.currentTarget.currentTime * 1000)} onSeeked={(event) => { setSongTimeMs(event.currentTarget.currentTime * 1000); scheduledNoteIds.current.clear() }} />}
+      {importedSong && <audio ref={audioRef} src={importedSong.audioUrl} onPlay={() => setIsSongPlaying(true)} onPause={() => setIsSongPlaying(false)} onEnded={() => setIsSongPlaying(false)} onTimeUpdate={(event) => setSongTimeMs(event.currentTarget.currentTime * 1000)} onSeeked={(event) => { setSongTimeMs(event.currentTarget.currentTime * 1000); if (isLoopSeeking.current) isLoopSeeking.current = false; else resetScheduledNotes() }} />}
       <aside className="panel">
         <div className="panel-hero"><span className="eyebrow">Beatmap DAW</span><h1>Flow Fight</h1><p>Import songs, align the beat grid, record lane events, then playtest the feel.</p></div>
         <Tabs value={activeTab} className="ui-tabs"><TabsList className="ui-tabs__list">{(['play', 'editor', 'config', 'debug'] as const).map((tab) => <TabsTrigger key={tab} value={tab} className="ui-tabs__trigger" onClick={() => setActiveTab(tab)}>{tab}</TabsTrigger>)}</TabsList></Tabs>
