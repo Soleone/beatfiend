@@ -24,7 +24,7 @@ Projectiles should **hit the pad on the beat**. Do not schedule notes so project
 
 - React 19 + TypeScript + Vite
 - React Three Fiber / Drei / Three.js for the game view
-- shadcn/ui is the intended UI component model. Use shadcn-style primitives and conventions for controls such as Switch, Button, Input, Select, Slider, Card, Tabs, and Disclosure. Do not hand-roll a custom control when an appropriate shadcn component pattern exists.
+- shadcn/ui latest with the Base UI backend is the UI component direction. Use `npx shadcn@latest ... -b base ...` when adding or regenerating components. Do not use the Radix backend for this project.
 - Local Express server for YouTube import, cache, beatmap persistence
 - `yt-dlp`, `ffmpeg`, `ffprobe` are required for local importing
 - `fft-js` is used by the server for rough audio onset analysis

@@ -439,78 +439,6 @@
       "lane": "low",
       "strength": 1,
       "source": "manual-grid"
-    },
-    {
-      "id": "manual-1783500212055-0",
-      "rawTimeMs": 27224.025999999998,
-      "impactTimeMs": 27205.276019785655,
-      "lane": "low",
-      "strength": 1,
-      "source": "manual-quantized"
-    },
-    {
-      "id": "manual-1783500212322-1",
-      "rawTimeMs": 27491.584,
-      "impactTimeMs": 27452.596712283594,
-      "lane": "low",
-      "strength": 1,
-      "source": "manual-quantized"
-    },
-    {
-      "id": "manual-1783500212621-2",
-      "rawTimeMs": 27787.861,
-      "impactTimeMs": 27823.5777510305,
-      "lane": "low",
-      "strength": 1,
-      "source": "manual-quantized"
-    },
-    {
-      "id": "manual-1783500212896-3",
-      "rawTimeMs": 28064.347999999998,
-      "impactTimeMs": 28070.898443528444,
-      "lane": "low",
-      "strength": 1,
-      "source": "manual-quantized"
-    },
-    {
-      "id": "manual-1783500213166-4",
-      "rawTimeMs": 28338.278,
-      "impactTimeMs": 28318.219136026382,
-      "lane": "low",
-      "strength": 1,
-      "source": "manual-quantized"
-    },
-    {
-      "id": "manual-1783500213404-5",
-      "rawTimeMs": 28585.024,
-      "impactTimeMs": 28565.53982852432,
-      "lane": "low",
-      "strength": 1,
-      "source": "manual-quantized"
-    },
-    {
-      "id": "manual-1783500213641-6",
-      "rawTimeMs": 28811.051,
-      "impactTimeMs": 28812.86052102226,
-      "lane": "low",
-      "strength": 1,
-      "source": "manual-quantized"
-    },
-    {
-      "id": "manual-1783500213865-7",
-      "rawTimeMs": 29052.350000000002,
-      "impactTimeMs": 29060.181213520198,
-      "lane": "low",
-      "strength": 1,
-      "source": "manual-quantized"
-    },
-    {
-      "id": "manual-1783500221505-29184",
-      "impactTimeMs": 29183.841559769167,
-      "rawTimeMs": 29170.891859649124,
-      "lane": "low",
-      "strength": 1,
-      "source": "manual-grid"
     }
   ],
   "beatOffsetMs": 1483.924,
@@ -518,7 +446,7 @@
   "difficulty": 1,
   "songId": "MRJG17fC8S",
   "source": "manual",
-  "updatedAt": "2026-07-08T08:43:45.981Z",
+  "updatedAt": "2026-07-08T08:42:48.267Z",
   "createdAt": "2026-07-08T07:26:43.183Z",
-  "version": 11
+  "version": 10
 }
