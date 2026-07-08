@@ -4,7 +4,7 @@ import { Color } from 'three'
 import type { Group, Mesh, MeshStandardMaterial } from 'three'
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent, type ReactNode, type WheelEvent } from 'react'
 import './App.css'
-import { Badge, Button, Card, CardDescription, CardHeader, CardTitle, Disclosure, DisclosureSummary, Field, FieldLabel, Input, Select, Slider, Stack, Tabs } from './components/base-ui'
+import { Badge, Button, Card, CardDescription, CardHeader, CardTitle, Disclosure, DisclosureSummary, Field, FieldLabel, Input, Select, Slider, Stack, Switch, Tabs } from './components/base-ui'
 import { attackPhase, judgeParryTiming, type ParryTimingResult } from './game/timing'
 
 type Tuning = { parryWindowMs: number; perfectWindowMs: number; telegraphMs: number; recoveryMs: number; inputOffsetMs: number }
@@ -20,6 +20,7 @@ type GridDivision = 4 | 8 | 16 | 32 | 64
 type LaneControls = Record<Lane, { keyboard: string; gamepadButton: number }>
 type TimelineBounds = { startMs: number; endMs: number; spanMs: number }
 type TimelineGridLine = { left: number; strength: 'bar' | 'beat' | 'sub'; label?: string }
+type LoopMarkers = { startMs: number | null; endMs: number | null }
 
 const initialTuning: Tuning = { parryWindowMs: 80, perfectWindowMs: 40, telegraphMs: 1150, recoveryMs: 260, inputOffsetMs: 0 }
 const clamp01 = (value: number) => Math.min(1, Math.max(0, value))
@@ -60,32 +61,8 @@ function isTextEditingTarget(target: EventTarget | null) {
 
 function isEditingTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false
-  return Boolean(target.closest('input, textarea, select, button, [contenteditable="true"], [role="textbox"], [role="combobox"], [role="spinbutton"], [role="slider"]'))
+  return Boolean(target.closest('input, textarea, select, [contenteditable="true"], [role="textbox"], [role="combobox"], [role="spinbutton"], [role="slider"]'))
 }
-
-function playParrySound(kind: FeedbackEvent['kind']) {
-  const AudioContextClass = window.AudioContext || window.webkitAudioContext
-  if (!AudioContextClass) return
-  const audio = new AudioContextClass()
-  const now = audio.currentTime
-  const master = audio.createGain()
-  master.gain.setValueAtTime(0.0001, now)
-  master.gain.exponentialRampToValueAtTime(kind === 'perfect-parry' ? 0.22 : 0.14, now + 0.01)
-  master.gain.exponentialRampToValueAtTime(0.0001, now + 0.22)
-  master.connect(audio.destination)
-  const hit = audio.createOscillator()
-  const hitGain = audio.createGain()
-  hit.type = kind === 'perfect-parry' ? 'triangle' : 'square'
-  hit.frequency.setValueAtTime(kind === 'perfect-parry' ? 1180 : kind === 'good-parry' ? 520 : 150, now)
-  hit.frequency.exponentialRampToValueAtTime(kind === 'perfect-parry' ? 1760 : 260, now + 0.08)
-  hitGain.gain.setValueAtTime(0.7, now)
-  hitGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.16)
-  hit.connect(hitGain).connect(master)
-  hit.start(now)
-  hit.stop(now + 0.18)
-}
-
-declare global { interface Window { webkitAudioContext?: typeof AudioContext } }
 
 function normalizeLane(lane: unknown): Lane {
   if (lane === 'left') return 'low'
@@ -173,9 +150,11 @@ function EditorTimeline({
   bounds,
   songTimeMs,
   selectedNoteId,
+  loopMarkers,
   onTimelineClick,
   onTimelineWheel,
   onSeek,
+  onLoopRulerClick,
   onRemoveNote,
 }: {
   notes: Array<BeatmapNote & { pending: boolean }>
@@ -183,12 +162,17 @@ function EditorTimeline({
   bounds: TimelineBounds
   songTimeMs: number
   selectedNoteId: string | null
+  loopMarkers: LoopMarkers
   onTimelineClick: (event: MouseEvent<HTMLDivElement>) => void
   onTimelineWheel: (event: WheelEvent<HTMLDivElement>) => void
   onSeek: (timeMs: number, bypassSnap?: boolean) => void
+  onLoopRulerClick: (timeMs: number, marker: 'start' | 'end', bypassSnap?: boolean) => void
   onRemoveNote: (noteId: string) => void
 }) {
   const playheadLeft = ((songTimeMs - bounds.startMs) / bounds.spanMs) * 100
+  const loopStartLeft = loopMarkers.startMs === null ? null : ((loopMarkers.startMs - bounds.startMs) / bounds.spanMs) * 100
+  const loopEndLeft = loopMarkers.endMs === null ? null : ((loopMarkers.endMs - bounds.startMs) / bounds.spanMs) * 100
+  const hasVisibleLoopRange = loopStartLeft !== null && loopEndLeft !== null && loopStartLeft >= 0 && loopEndLeft <= 100 && loopEndLeft > loopStartLeft
   const seekFromPointer = (clientX: number, width: number, left: number, bypassSnap = false) => {
     const xRatio = clamp01((clientX - left) / width)
     onSeek(bounds.startMs + xRatio * bounds.spanMs, bypassSnap)
@@ -202,7 +186,10 @@ function EditorTimeline({
     const rect = event.currentTarget.getBoundingClientRect()
     const yPx = event.clientY - rect.top
     if (yPx < timelineLaneTopPx) {
-      seekFromPointer(event.clientX, rect.width, rect.left, event.shiftKey)
+      const xRatio = clamp01((event.clientX - rect.left) / rect.width)
+      const timeMs = bounds.startMs + xRatio * bounds.spanMs
+      if (event.ctrlKey) onLoopRulerClick(timeMs, event.altKey ? 'end' : 'start', event.shiftKey)
+      else seekFromPointer(event.clientX, rect.width, rect.left, event.shiftKey)
       return
     }
     onTimelineClick(event)
@@ -211,6 +198,9 @@ function EditorTimeline({
   return (
     <div className="timeline timeline--expanded" onClick={handleTimelineRootClick} onWheel={onTimelineWheel}>
       <div className="timeline-ruler">{gridLines.filter((line) => line.label).map((line, index) => <span key={`label-${line.left}-${index}`} className={`timeline-ruler__mark timeline-ruler__mark--${line.strength}`} style={{ left: `${line.left}%` }}>{line.label}</span>)}</div>
+      {hasVisibleLoopRange && <div className="timeline-loop-range" style={{ left: `${loopStartLeft}%`, width: `${loopEndLeft - loopStartLeft}%` }} />}
+      {loopStartLeft !== null && loopStartLeft >= 0 && loopStartLeft <= 100 && <div className="timeline-loop-marker timeline-loop-marker--start" style={{ left: `${loopStartLeft}%` }} title="Loop start" />}
+      {loopEndLeft !== null && loopEndLeft >= 0 && loopEndLeft <= 100 && <div className="timeline-loop-marker timeline-loop-marker--end" style={{ left: `${loopEndLeft}%` }} title="Loop stop" />}
       <div className="timeline-grid">{gridLines.map((line, index) => <span key={`${line.left}-${index}`} className={`timeline-grid__line timeline-grid__line--${line.strength}`} style={{ left: `${line.left}%` }} />)}</div>
       <div className="timeline-labels">{lanes.map((lane) => <span key={lane}>{lane}</span>)}</div>
       {playheadLeft >= 0 && playheadLeft <= 100 && <div className="playhead" style={{ left: `${playheadLeft}%` }}><div className="playhead-handle" title="Drag to seek" onClick={(event) => event.stopPropagation()} onPointerDown={(event) => { event.stopPropagation(); event.currentTarget.setPointerCapture(event.pointerId); dragPlayhead(event) }} onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) dragPlayhead(event) }} onPointerUp={(event) => { event.stopPropagation(); if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId) }} /></div>}
@@ -221,6 +211,18 @@ function EditorTimeline({
 
 function Toolbar({ children }: { children: ReactNode }) {
   return <div className="edit-toolbar">{children}</div>
+}
+
+function HitNotify({ feedback }: { feedback: FeedbackEvent | null }) {
+  if (!feedback) return null
+  const isPerfect = feedback.kind === 'perfect-parry'
+  const isGood = feedback.kind === 'good-parry'
+  return (
+    <div key={feedback.id} className={`hit-notify ${isPerfect ? 'hit-notify--perfect' : isGood ? 'hit-notify--good' : 'hit-notify--miss'}`} aria-live="polite">
+      <span className="hit-notify__icon">{isGood || isPerfect ? '✓' : '×'}</span>
+      <span className="hit-notify__label">{isPerfect ? 'Perfect' : isGood ? 'Hit' : 'Miss'}</span>
+    </div>
+  )
 }
 
 function Arena({ attacks, tuning, parryPulse, feedback, padTriggers, onPhaseChange }: { attacks: Attack[]; tuning: Tuning; parryPulse: number; feedback: FeedbackEvent | null; padTriggers: Record<Lane, number>; onPhaseChange: (phase: string) => void }) {
@@ -377,6 +379,7 @@ function App() {
   const [timelineZoomSeconds, setTimelineZoomSeconds] = useState<number | 'fit'>(30)
   const [timelineCenterMs, setTimelineCenterMs] = useState(0)
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null)
+  const [loopMarkers, setLoopMarkers] = useState<LoopMarkers>({ startMs: null, endMs: null })
   const [padTriggers, setPadTriggers] = useState<Record<Lane, number>>({ kick: 0, snare: 0, low: 0, mid: 0, high: 0 })
   const audioRef = useRef<HTMLAudioElement>(null)
   const scheduledNoteIds = useRef(new Set<string>())
@@ -413,6 +416,7 @@ function App() {
     calibrationHydrated.current = true
     setSongBeatmaps(song.beatmaps ?? [])
     scheduledNoteIds.current.clear()
+    setLoopMarkers({ startMs: null, endMs: null })
     setImportStatus(`Loaded ${song.noteCount} notes from cache`)
   }, [])
 
@@ -456,7 +460,7 @@ function App() {
     const result = judgeParryTiming({ inputTimeMs, impactTimeMs: target.impactMs, ...tuning })
     setLastResult(result); setLastAutoMiss(false); setParryPulse(inputTimeMs)
     const kind: FeedbackEvent['kind'] = result.success ? (result.grade === 'perfect' ? 'perfect-parry' : 'good-parry') : 'miss'
-    setFeedback({ id: Math.random(), kind, startedAtMs: inputTimeMs, lane }); playParrySound(kind)
+    setFeedback({ id: Math.random(), kind, startedAtMs: inputTimeMs, lane })
     if (result.success) {
       setStats((s) => ({ ...s, hit: s.hit + 1, perfect: s.perfect + (result.grade === 'perfect' ? 1 : 0), good: s.good + (result.grade === 'good' ? 1 : 0), streak: s.streak + 1, bestStreak: Math.max(s.bestStreak, s.streak + 1) }))
       setActiveAttacks((attacks) => attacks.filter((attack) => attack.id !== target.id))
@@ -553,6 +557,7 @@ function App() {
           setStats((s) => ({ ...s, missed: s.missed + expired.length, streak: 0 }))
           setLastResult(null)
           setLastAutoMiss(true)
+          setFeedback({ id: Math.random(), kind: 'miss', startedAtMs: now, lane: expired[0]?.lane })
         }
         return attacks.filter((attack) => now < attack.impactMs + (isSongPlaying ? tuning.parryWindowMs : tuning.recoveryMs + 700))
       })
@@ -565,7 +570,13 @@ function App() {
     const timer = window.setInterval(() => {
       const audio = audioRef.current
       if (!audio || audio.paused) return
-      const songTimeMs = audio.currentTime * 1000
+      let songTimeMs = audio.currentTime * 1000
+      if (loopMarkers.startMs !== null && loopMarkers.endMs !== null && loopMarkers.endMs > loopMarkers.startMs && songTimeMs >= loopMarkers.endMs) {
+        songTimeMs = loopMarkers.startMs
+        audio.currentTime = songTimeMs / 1000
+        scheduledNoteIds.current.clear()
+        setActiveAttacks([])
+      }
       setSongTimeMs(songTimeMs)
       if (activeTab === 'editor') setTimelineCenterMs(songTimeMs)
       if (!beatmap) return
@@ -580,7 +591,7 @@ function App() {
       setActiveAttacks((attacks) => [...attacks, ...dueNotes.map((note) => makeBeatmapAttack(note.impactTimeMs - songTimeMs, note.lane, note.durationMs))].sort((a, b) => a.impactMs - b.impactMs).slice(0, 12))
     }, 25)
     return () => window.clearInterval(timer)
-  }, [activeTab, beatmap, tuning.telegraphMs])
+  }, [activeTab, beatmap, loopMarkers, tuning.telegraphMs])
 
   const importYoutube = useCallback(async () => {
     const url = youtubeUrl.trim(); if (!url) return
@@ -693,17 +704,29 @@ function App() {
     setLastAutoMiss(false)
     setFeedback(null)
   }, [beatmap?.durationMs, importedSong?.durationMs])
+  const snapTimelineTime = useCallback((timeMs: number, bypassSnap = false) => quantize && !bypassSnap ? beatOffsetMs + Math.round((timeMs - beatOffsetMs) / gridMs) * gridMs : timeMs, [beatOffsetMs, gridMs, quantize])
   const seekTimeline = useCallback((timeMs: number, bypassSnap = false) => {
-    const snappedTimeMs = quantize && !bypassSnap ? beatOffsetMs + Math.round((timeMs - beatOffsetMs) / gridMs) * gridMs : timeMs
-    seekSong(Math.max(0, snappedTimeMs))
-  }, [beatOffsetMs, gridMs, quantize, seekSong])
+    seekSong(Math.max(0, snapTimelineTime(timeMs, bypassSnap)))
+  }, [seekSong, snapTimelineTime])
+  const handleLoopRulerClick = useCallback((timeMs: number, marker: 'start' | 'end', bypassSnap = false) => {
+    const markerMs = Math.max(0, snapTimelineTime(timeMs, bypassSnap))
+    const markerHitWindowMs = Math.max(80, gridMs * 0.45)
+    setLoopMarkers((current) => {
+      if (marker === 'start') {
+        if (current.startMs !== null && Math.abs(markerMs - current.startMs) <= markerHitWindowMs) return { startMs: null, endMs: current.endMs }
+        return { startMs: markerMs, endMs: current.endMs && current.endMs > markerMs ? current.endMs : null }
+      }
+      if (current.endMs !== null && Math.abs(markerMs - current.endMs) <= markerHitWindowMs) return { ...current, endMs: null }
+      return { ...current, endMs: markerMs }
+    })
+  }, [gridMs, snapTimelineTime])
   const playSong = useCallback(() => { void audioRef.current?.play() }, [])
   const pauseSong = useCallback(() => { audioRef.current?.pause() }, [])
   const seekRelativeSong = useCallback((deltaMs: number) => seekSong(songTimeMs + deltaMs), [seekSong, songTimeMs])
   const restartSong = useCallback(() => {
     const audio = audioRef.current
     if (!audio) return
-    const restartMs = Math.max(0, beatOffsetMs)
+    const restartMs = Math.max(0, loopMarkers.startMs ?? beatOffsetMs)
     audio.currentTime = restartMs / 1000
     setSongTimeMs(restartMs)
     setTimelineCenterMs(restartMs)
@@ -713,7 +736,7 @@ function App() {
     setLastResult(null)
     setLastAutoMiss(false)
     void audio.play()
-  }, [beatOffsetMs])
+  }, [beatOffsetMs, loopMarkers.startMs])
 
   const rows = useMemo(() => [
     ['Parry ±', tuning.parryWindowMs, 20, 260, 'ms', 'parryWindowMs'], ['Perfect ±', tuning.perfectWindowMs, 10, 120, 'ms', 'perfectWindowMs'], ['Avg travel', tuning.telegraphMs, 450, 2000, 'ms', 'telegraphMs'], ['Input offset', tuning.inputOffsetMs, -80, 80, 'ms', 'inputOffsetMs'],
@@ -760,6 +783,8 @@ function App() {
     const quarterMs = 60000 / bpm
     const first = beatOffsetMs + Math.ceil((timelineBounds.startMs - beatOffsetMs) / gridMs) * gridMs
     const gridSpacingPercent = (gridMs / timelineBounds.spanMs) * 100
+    const beatSpacingPercent = (quarterMs / timelineBounds.spanMs) * 100
+    const showBeatLabels = beatSpacingPercent >= 4
     const lines: Array<{ left: number; strength: 'bar' | 'beat' | 'sub'; label?: string }> = []
     for (let timeMs = first; timeMs <= timelineBounds.endMs; timeMs += gridMs) {
       const left = ((timeMs - timelineBounds.startMs) / timelineBounds.spanMs) * 100
@@ -767,9 +792,14 @@ function App() {
       const isBeat = Math.abs(timeMs - (beatOffsetMs + beatIndex * quarterMs)) < 1
       const isBar = isBeat && beatIndex % 4 === 0
       const barNumber = Math.floor(beatIndex / 4) + 1
+      const beatNumber = ((beatIndex % 4) + 4) % 4 + 1
       if (!isBeat && gridSpacingPercent < 1.2) continue
       if (isBeat && gridSpacingPercent < 0.35) continue
-      lines.push({ left, strength: isBar ? 'bar' : isBeat ? 'beat' : 'sub', label: isBar && barNumber > 0 ? String(barNumber) : undefined })
+      lines.push({
+        left,
+        strength: isBar ? 'bar' : isBeat ? 'beat' : 'sub',
+        label: isBar && barNumber > 0 ? String(barNumber) : showBeatLabels && isBeat && beatIndex >= 0 ? String(beatNumber) : undefined,
+      })
       if (lines.length > 500) break
     }
     return lines
@@ -840,7 +870,8 @@ function App() {
       if (activeTab !== 'editor' || isEditingTarget(event.target)) return
       if (event.code === 'Space') {
         event.preventDefault()
-        if (isSongPlaying) pauseSong()
+        if (event.shiftKey) restartSong()
+        else if (isSongPlaying) pauseSong()
         else playSong()
         return
       }
@@ -867,8 +898,9 @@ function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [activeTab, centerTimelineOnPlayhead, isSongPlaying, pauseSong, playSong, removeNote, selectedNoteId, zoomOptions])
-  const transport = <div className="transport-bar" aria-label="Transport controls"><Button type="button" variant="ghost" className="transport-icon-button" onClick={restartSong} disabled={!importedSong} title="Restart to beat 1" tooltip="Restart to beat 1">↺</Button><Button type="button" variant="ghost" className="transport-icon-button" onClick={() => seekRelativeSong(-5000)} disabled={!importedSong} title="Back 5 seconds" tooltip="Back 5 seconds">⏪ 5</Button><Button type="button" className="transport-play-button" onClick={isSongPlaying ? pauseSong : playSong} disabled={!importedSong} title={isSongPlaying ? 'Pause' : 'Play'} tooltip={isSongPlaying ? 'Pause' : 'Play'} shortcut="Space">{isSongPlaying ? '⏸' : '▶'}</Button><Button type="button" variant="ghost" className="transport-icon-button" onClick={() => seekRelativeSong(5000)} disabled={!importedSong} title="Forward 5 seconds" tooltip="Forward 5 seconds">5 ⏩</Button></div>
+  }, [activeTab, centerTimelineOnPlayhead, isSongPlaying, pauseSong, playSong, removeNote, restartSong, selectedNoteId, zoomOptions])
+  const restartTooltip = loopMarkers.startMs === null ? 'Restart to beat 1' : 'Restart to loop start'
+  const transport = <div className="transport-bar" aria-label="Transport controls"><Button type="button" variant="ghost" className="transport-icon-button" onClick={restartSong} disabled={!importedSong} title={restartTooltip} tooltip={restartTooltip} shortcut="Shift+Space">↺</Button><Button type="button" variant="ghost" className="transport-icon-button" onClick={() => seekRelativeSong(-5000)} disabled={!importedSong} title="Back 5 seconds" tooltip="Back 5 seconds">⏪ 5</Button><Button type="button" className="transport-play-button" onClick={isSongPlaying ? pauseSong : playSong} disabled={!importedSong} title={isSongPlaying ? 'Pause' : 'Play'} tooltip={isSongPlaying ? 'Pause' : 'Play'} shortcut="Space">{isSongPlaying ? '⏸' : '▶'}</Button><Button type="button" variant="ghost" className="transport-icon-button" onClick={() => seekRelativeSong(5000)} disabled={!importedSong} title="Forward 5 seconds" tooltip="Forward 5 seconds">5 ⏩</Button></div>
   const songSelector = <Card><CardHeader><CardTitle>Current song</CardTitle><CardDescription>{importedSong ? importedSong.title : 'Choose a cached song or import one from Config.'}</CardDescription></CardHeader>{savedImports.length > 0 ? <Field><FieldLabel>Song</FieldLabel><Select value={importedSong?.id ?? ''} onChange={(event) => { const song = savedImports.find((item) => item.id === event.target.value); if (song) void loadImport(song) }}><option value="">Select cached song...</option>{savedImports.map((song) => <option key={song.id} value={song.id}>{song.title}</option>)}</Select></Field> : <p className="editor-hint">No cached songs yet. Use Config to import from YouTube.</p>}{songBeatmaps.length > 0 && <Field><FieldLabel>Beatmap</FieldLabel><Select value={beatmap?.id ?? ''} onChange={(event) => void loadBeatmap(event.target.value)}>{songBeatmaps.map((map) => <option key={map.id} value={map.id}>{'★'.repeat(map.difficulty ?? 1)} {map.title} ({map.noteCount})</option>)}</Select></Field>}</Card>
   const judgementText = lastAutoMiss ? 'miss' : lastResult ? lastResult.grade : 'ready'
   const gradeColor = lastAutoMiss ? '#ff5570' : lastResult?.grade === 'perfect' ? '#ffd166' : lastResult?.grade === 'good' ? '#83ff70' : undefined
@@ -880,9 +912,9 @@ function App() {
     <main className={activeTab === 'editor' ? 'editing-layout' : undefined}>
       <section className={activeTab === 'editor' ? 'stage edit-stage' : 'stage'}>
         {activeTab === 'editor'
-          ? <div className="edit-workspace"><div className="edit-workspace__header"><div className="edit-title-row"><div><span className="eyebrow">Editor</span><h2>{mapTitle || 'Untitled beatmap'}</h2><p>{recordedNotes.length} buffered · {beatmap?.notes.length ?? 0} saved · Record captures configured lane controls against the song timeline</p></div><div className="edit-primary-actions"><Button type="button" variant={isRecording ? 'warning' : 'secondary'} onClick={isRecording ? stopRecording : startRecording} tooltip={isRecording ? 'Stop recording' : 'Start recording'}>{isRecording ? 'Stop rec' : 'Record'}</Button><Button type="button" variant="secondary" onClick={() => void saveBeatmap(false)} disabled={!beatmap || !importedSong} tooltip="Save current beatmap">Save</Button></div></div>{transport}<Toolbar><div className="toolbar-section"><span className="toolbar-section__label">Record</span><div className="toolbar-group"><Button type="button" variant="ghost" size="pill" className={recordMode === 'add' ? 'active' : ''} onClick={() => setRecordMode('add')} tooltip="Record adds new notes">Add</Button><Button type="button" variant="ghost" size="pill" className={recordMode === 'replace' ? 'active' : ''} onClick={() => setRecordMode('replace')} tooltip="Record replaces armed lanes in the recorded range">Replace</Button></div></div><div className="toolbar-section toolbar-section--wide"><span className="toolbar-section__label">Lanes</span><div className="toolbar-group">{lanes.map((lane) => <Button key={lane} type="button" variant="ghost" size="pill" className={armedLanes.has(lane) ? 'active' : ''} onClick={() => setArmedLanes((current) => { const next = new Set(current); if (next.has(lane)) next.delete(lane); else next.add(lane); return next })} tooltip={`Toggle ${lane} lane recording`}>{lane}</Button>)}</div></div><div className="toolbar-section"><span className="toolbar-section__label">Grid</span><div className="toolbar-group">{([4, 8, 16, 32, 64] as const).map((division) => <Button key={division} type="button" variant="ghost" size="pill" className={gridDivision === division ? 'active' : ''} onClick={() => setGridDivision(division)} tooltip={`Set grid to 1/${division}`} shortcut={String(([4, 8, 16, 32, 64] as const).indexOf(division) + 1)}>1/{division}</Button>)}<Button type="button" variant="ghost" size="pill" className={quantize ? 'active' : ''} onClick={() => setQuantize((value) => !value)} tooltip="Toggle snap" shortcut="6">Snap</Button></div></div><div className="toolbar-section"><span className="toolbar-section__label">Zoom</span><div className="toolbar-group">{zoomOptions.map((seconds) => <Button key={seconds} type="button" variant="ghost" size="pill" className={timelineZoomSeconds === seconds ? 'active' : ''} onClick={() => setTimelineZoomSeconds(seconds)} tooltip={`Zoom to ${seconds * 2}s window`} shortcut={`Shift+${zoomOptions.indexOf(seconds) + 1}`}>{seconds * 2}s</Button>)}<Button type="button" variant="ghost" size="pill" className={timelineZoomSeconds === 'fit' ? 'active' : ''} onClick={() => setTimelineZoomSeconds('fit')} tooltip="Fit song in timeline" shortcut="Shift+8">Fit</Button><Button type="button" variant="ghost" size="pill" onClick={centerTimelineOnPlayhead} tooltip="Center timeline on playhead" shortcut="Shift+9">Follow</Button></div></div><div className="toolbar-section"><span className="toolbar-section__label">Tempo{tapMode ? ` · ${detectedBpm ? `${detectedBpm} bpm` : 'tap keys'}` : ''}</span><div className="toolbar-group"><Input type="number" min="40" max="300" step="0.1" value={Number.isFinite(bpm) ? Math.round(bpm * 10) / 10 : ''} onChange={(event) => { const nextBpm = Number(event.target.value); if (Number.isFinite(nextBpm) && nextBpm > 0) setBpm(Math.round(nextBpm * 10) / 10) }} /><Button type="button" variant="ghost" size="pill" className={tapMode ? 'active' : ''} onClick={toggleTapBpm} tooltip={tapMode ? 'Use detected BPM' : 'Start tap BPM'}>{tapMode ? 'Stop + use' : 'Start tap'}</Button></div>{tapMode && <span className="tap-bpm-readout">{detectedBpm ? `Live BPM ${detectedBpm}` : 'Press Space/W/arrows on the beat…'}</span>}</div><div className="toolbar-section toolbar-section--wide"><span className="toolbar-section__label">Beat 1 · {(beatOffsetMs / 1000).toFixed(3)}s</span><div className="toolbar-group"><Button type="button" variant="ghost" size="pill" onClick={setBeatOneAtPlayhead} tooltip="Set current playhead as beat 1">Set beat 1 here</Button><Button type="button" variant="ghost" size="pill" onClick={() => nudgeBeatOffset(-10)} tooltip="Move beat 1 earlier by 10ms">-10ms</Button><Button type="button" variant="ghost" size="pill" onClick={() => nudgeBeatOffset(10)} tooltip="Move beat 1 later by 10ms">+10ms</Button></div></div><div className="toolbar-section"><span className="toolbar-section__label">Selection</span><div className="toolbar-group"><Button type="button" variant="ghost" size="pill" onClick={() => selectedNoteId && removeNote(selectedNoteId)} disabled={!selectedNoteId} tooltip="Delete selected note" shortcut="Delete">Delete</Button></div></div></Toolbar></div><EditorTimeline notes={timelineNotes} gridLines={timelineGridLines} bounds={timelineBounds} songTimeMs={songTimeMs} selectedNoteId={selectedNoteId} onTimelineClick={handleTimelineClick} onTimelineWheel={handleTimelineWheel} onSeek={seekTimeline} onRemoveNote={removeNote} /></div>
+          ? <div className="edit-workspace"><div className="edit-workspace__header"><div className="edit-title-row"><div><span className="eyebrow">Editor</span><h2>{mapTitle || 'Untitled beatmap'}</h2><p>{recordedNotes.length} buffered · {beatmap?.notes.length ?? 0} saved · Record captures configured lane controls against the song timeline</p></div><div className="edit-primary-actions"><Button type="button" variant={isRecording ? 'warning' : 'secondary'} onClick={isRecording ? stopRecording : startRecording} tooltip={isRecording ? 'Stop recording' : 'Start recording'}>{isRecording ? 'Stop rec' : 'Record'}</Button><Button type="button" variant="secondary" onClick={() => void saveBeatmap(false)} disabled={!beatmap || !importedSong} tooltip="Save current beatmap">Save</Button></div></div>{transport}<Toolbar><div className="toolbar-section"><span className="toolbar-section__label">Record</span><div className="toolbar-group"><Button type="button" variant="ghost" size="pill" className={recordMode === 'add' ? 'active' : ''} onClick={() => setRecordMode('add')} tooltip="Record adds new notes">Add</Button><Button type="button" variant="ghost" size="pill" className={recordMode === 'replace' ? 'active' : ''} onClick={() => setRecordMode('replace')} tooltip="Record replaces armed lanes in the recorded range">Replace</Button></div></div><div className="toolbar-section toolbar-section--wide"><span className="toolbar-section__label">Lanes</span><div className="toolbar-group">{lanes.map((lane) => <Button key={lane} type="button" variant="ghost" size="pill" className={armedLanes.has(lane) ? 'active' : ''} onClick={() => setArmedLanes((current) => { const next = new Set(current); if (next.has(lane)) next.delete(lane); else next.add(lane); return next })} tooltip={`Toggle ${lane} lane recording`}>{lane}</Button>)}</div></div><div className="toolbar-section"><span className="toolbar-section__label">Grid</span><div className="toolbar-group">{([4, 8, 16, 32, 64] as const).map((division) => <Button key={division} type="button" variant="ghost" size="pill" className={gridDivision === division ? 'active' : ''} onClick={() => setGridDivision(division)} tooltip={`Set grid to 1/${division}`} shortcut={String(([4, 8, 16, 32, 64] as const).indexOf(division) + 1)}>1/{division}</Button>)}<Switch checked={quantize} onCheckedChange={setQuantize} label="Snap" tooltip="Snap recording and edit actions to the grid" shortcut="6" /></div></div><div className="toolbar-section"><span className="toolbar-section__label">Zoom</span><div className="toolbar-group">{zoomOptions.map((seconds) => <Button key={seconds} type="button" variant="ghost" size="pill" className={timelineZoomSeconds === seconds ? 'active' : ''} onClick={() => setTimelineZoomSeconds(seconds)} tooltip={`Zoom to ${seconds * 2}s window`} shortcut={`Shift+${zoomOptions.indexOf(seconds) + 1}`}>{seconds * 2}s</Button>)}<Button type="button" variant="ghost" size="pill" className={timelineZoomSeconds === 'fit' ? 'active' : ''} onClick={() => setTimelineZoomSeconds('fit')} tooltip="Fit song in timeline" shortcut="Shift+8">Fit</Button><Button type="button" variant="ghost" size="pill" onClick={centerTimelineOnPlayhead} tooltip="Center timeline on playhead" shortcut="Shift+9">Follow</Button></div></div><div className="toolbar-section"><span className="toolbar-section__label">Tempo{tapMode ? ` · ${detectedBpm ? `${detectedBpm} bpm` : 'tap keys'}` : ''}</span><div className="toolbar-group"><Input type="number" min="40" max="300" step="0.1" value={Number.isFinite(bpm) ? Math.round(bpm * 10) / 10 : ''} onChange={(event) => { const nextBpm = Number(event.target.value); if (Number.isFinite(nextBpm) && nextBpm > 0) setBpm(Math.round(nextBpm * 10) / 10) }} /><Button type="button" variant="ghost" size="pill" className={tapMode ? 'active' : ''} onClick={toggleTapBpm} tooltip={tapMode ? 'Use detected BPM' : 'Start tap BPM'}>{tapMode ? 'Stop + use' : 'Start tap'}</Button></div>{tapMode && <span className="tap-bpm-readout">{detectedBpm ? `Live BPM ${detectedBpm}` : 'Press Space/W/arrows on the beat…'}</span>}</div><div className="toolbar-section toolbar-section--wide"><span className="toolbar-section__label">Beat 1 · {(beatOffsetMs / 1000).toFixed(3)}s</span><div className="toolbar-group"><Button type="button" variant="ghost" size="pill" onClick={setBeatOneAtPlayhead} tooltip="Set current playhead as beat 1">Set beat 1 here</Button><Button type="button" variant="ghost" size="pill" onClick={() => nudgeBeatOffset(-10)} tooltip="Move beat 1 earlier by 10ms">-10ms</Button><Button type="button" variant="ghost" size="pill" onClick={() => nudgeBeatOffset(10)} tooltip="Move beat 1 later by 10ms">+10ms</Button></div></div><div className="toolbar-section"><span className="toolbar-section__label">Selection</span><div className="toolbar-group"><Button type="button" variant="ghost" size="pill" onClick={() => selectedNoteId && removeNote(selectedNoteId)} disabled={!selectedNoteId} tooltip="Delete selected note" shortcut="Delete">Delete</Button></div></div></Toolbar></div><EditorTimeline notes={timelineNotes} gridLines={timelineGridLines} bounds={timelineBounds} songTimeMs={songTimeMs} selectedNoteId={selectedNoteId} loopMarkers={loopMarkers} onTimelineClick={handleTimelineClick} onTimelineWheel={handleTimelineWheel} onSeek={seekTimeline} onLoopRulerClick={handleLoopRulerClick} onRemoveNote={removeNote} /></div>
           : activeTab === 'play'
-            ? <div className="play-stage"><div className="play-transport">{transport}</div><Canvas camera={{ position: [0, 0.18, 7.2], fov: 42 }}><Arena attacks={activeAttacks} tuning={tuning} parryPulse={parryPulse} feedback={feedback} padTriggers={padTriggers} onPhaseChange={setPhase} /></Canvas></div>
+            ? <div className="play-stage"><div className="play-transport">{transport}</div><HitNotify feedback={feedback} /><Canvas camera={{ position: [0, 0.18, 7.2], fov: 42 }}><Arena attacks={activeAttacks} tuning={tuning} parryPulse={parryPulse} feedback={feedback} padTriggers={padTriggers} onPhaseChange={setPhase} /></Canvas></div>
             : <Canvas camera={{ position: [0, 0.18, 7.2], fov: 42 }}><Arena attacks={activeAttacks} tuning={tuning} parryPulse={parryPulse} feedback={feedback} padTriggers={padTriggers} onPhaseChange={setPhase} /></Canvas>}
       </section>
       {activeTab !== 'editor' && <div className="status-stack" aria-live="polite">

@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, DetailsHTMLAttributes, HTMLAttributes, InputHTMLAttributes, LabelHTMLAttributes, SelectHTMLAttributes } from 'react'
+import type { ButtonHTMLAttributes, DetailsHTMLAttributes, HTMLAttributes, InputHTMLAttributes, KeyboardEvent as ReactKeyboardEvent, LabelHTMLAttributes, SelectHTMLAttributes } from 'react'
 
 type ButtonVariant = 'default' | 'secondary' | 'ghost' | 'warning'
 type ButtonSize = 'default' | 'sm' | 'pill'
@@ -7,9 +7,22 @@ function joinClassNames(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(' ')
 }
 
-export function Button({ className, variant = 'default', size = 'default', tooltip, shortcut, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant; size?: ButtonSize; tooltip?: string; shortcut?: string }) {
+export function Button({ className, variant = 'default', size = 'default', tooltip, shortcut, onKeyDown, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: ButtonVariant; size?: ButtonSize; tooltip?: string; shortcut?: string }) {
   const tooltipText = [tooltip, shortcut ? `Shortcut: ${shortcut}` : null].filter(Boolean).join('\n')
-  return <button className={joinClassNames('ui-button', `ui-button--${variant}`, `ui-button--${size}`, className)} data-tooltip={tooltipText || undefined} aria-keyshortcuts={shortcut} {...props} />
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    if (event.code === 'Space') event.preventDefault()
+    onKeyDown?.(event)
+  }
+  return <button className={joinClassNames('ui-button', `ui-button--${variant}`, `ui-button--${size}`, className)} data-tooltip={tooltipText || undefined} aria-keyshortcuts={shortcut} onKeyDown={handleKeyDown} {...props} />
+}
+
+export function Switch({ className, checked, onCheckedChange, label, tooltip, shortcut, onKeyDown, ...props }: Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'onChange'> & { checked: boolean; onCheckedChange: (checked: boolean) => void; label: string; tooltip?: string; shortcut?: string }) {
+  const tooltipText = [tooltip, shortcut ? `Shortcut: ${shortcut}` : null].filter(Boolean).join('\n')
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    if (event.code === 'Space') event.preventDefault()
+    onKeyDown?.(event)
+  }
+  return <button type="button" role="switch" aria-checked={checked} className={joinClassNames('ui-switch', checked && 'ui-switch--checked', className)} data-tooltip={tooltipText || undefined} aria-keyshortcuts={shortcut} onClick={() => onCheckedChange(!checked)} onKeyDown={handleKeyDown} {...props}><span className="ui-switch__label">{label}</span><span className="ui-switch__track"><span className="ui-switch__thumb" /></span><span className="ui-switch__state">{checked ? 'On' : 'Off'}</span></button>
 }
 
 export function Card({ className, ...props }: HTMLAttributes<HTMLElement>) {
