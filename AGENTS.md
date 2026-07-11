@@ -1,4 +1,4 @@
-# Flow Fight Agent Primer
+# Beat Fiend Agent Primer
 
 This file is for coding agents starting fresh in this repo.
 
@@ -14,7 +14,7 @@ When changing code, leave it easier to navigate than you found it. Use descripti
 
 ## Project vision
 
-Flow Fight is a tiny beatmap DAW with a rhythm/parry playtest mode. The long-term idea is: import any song, align a 4/4 beat grid, generate or record a draft beatmap from musical events, refine the beatmap by jamming along, then playtest it with rhythm-game timing plus parry/defense feedback.
+Beat Fiend is a tiny beatmap DAW with a rhythm-game playtest mode. The long-term idea is: import any song, align a 4/4 beat grid, generate or record a draft beatmap from musical events, refine the beatmap by jamming along, then playtest it with rhythm-game timing and scoring feedback.
 
 Current gameplay is lane-based:
 

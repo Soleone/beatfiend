@@ -36,6 +36,10 @@ import {
 
 const GameScene = lazy(() => import('./game/GameScene').then((module) => ({ default: module.GameScene })))
 
+const storageKey = (name: string) => `beat-fiend:${name}`
+const legacyStorageKey = (name: string) => `flow-fight:${name}`
+const readAppStorage = (name: string) => localStorage.getItem(storageKey(name)) ?? localStorage.getItem(legacyStorageKey(name))
+
 type EditorSnapshot = {
   beatmap: Beatmap | null
   recordedNotes: BeatmapNote[]
@@ -84,11 +88,11 @@ function App() {
   const [stats, setStats] = useState<PlayStats>({ hit: 0, perfect: 0, good: 0, missed: 0, streak: 0, bestStreak: 0 })
   const [songTimeMs, setSongTimeMs] = useState(0)
   const [activeTab, setActiveTab] = useState<'play' | 'editor' | 'config' | 'debug'>(() => {
-    const stored = localStorage.getItem('flow-fight:active-tab')
+    const stored = readAppStorage('active-tab')
     return stored === 'play' || stored === 'editor' || stored === 'config' || stored === 'debug' ? stored : 'play'
   })
   const [controls, setControls] = useState<LaneControls>(() => {
-    try { return { ...defaultControls, ...JSON.parse(localStorage.getItem('flow-fight:controls') ?? '{}') } }
+    try { return { ...defaultControls, ...JSON.parse(readAppStorage('controls') ?? '{}') } }
     catch { return defaultControls }
   })
   const [bpm, setBpm] = useState(120)
@@ -114,7 +118,7 @@ function App() {
   const previousGamepadButtons = useRef(new Set<number>())
   const calibrationHydrated = useRef(false)
   const persistedCalibration = useRef<string | null>(null)
-  const restoredSongId = useRef<string | null>(localStorage.getItem('flow-fight:selected-song'))
+  const restoredSongId = useRef<string | null>(readAppStorage('selected-song'))
   const undoStack = useRef<EditorSnapshot[]>([])
   const redoStack = useRef<EditorSnapshot[]>([])
   const lastHistoryKey = useRef<string | null>(null)
@@ -202,7 +206,7 @@ function App() {
   const loadImport = useCallback(async (song: ImportResult) => {
     resetGameplayPlayback()
     calibrationHydrated.current = false
-    localStorage.setItem('flow-fight:selected-song', song.id)
+    localStorage.setItem(storageKey('selected-song'), song.id)
     setImportedSong(song)
     setSongBeatmaps(song.beatmaps ?? [])
     setImportStatus(`Loading ${song.title}...`)
@@ -236,7 +240,7 @@ function App() {
 
   useEffect(() => { void loadImports() }, [loadImports])
 
-  useEffect(() => { localStorage.setItem('flow-fight:active-tab', activeTab) }, [activeTab])
+  useEffect(() => { localStorage.setItem(storageKey('active-tab'), activeTab) }, [activeTab])
   useEffect(() => {
     if (activeTab === 'play') resetGameplayPlayback()
   }, [activeTab, beatmap?.id, beatmap?.notes, importedSong?.id, resetGameplayPlayback])
@@ -251,7 +255,7 @@ function App() {
     void loadImport(song)
   }, [importedSong, loadImport, savedImports])
 
-  useEffect(() => { localStorage.setItem('flow-fight:controls', JSON.stringify(controls)) }, [controls])
+  useEffect(() => { localStorage.setItem(storageKey('controls'), JSON.stringify(controls)) }, [controls])
 
   useEffect(() => {
     if (!importedSong || !calibrationHydrated.current) return
@@ -1061,7 +1065,7 @@ function App() {
       </div>}
       {importedSong && <audio ref={audioRef} src={importedSong.audioUrl} onPlay={() => setIsSongPlaying(true)} onPause={() => setIsSongPlaying(false)} onEnded={() => setIsSongPlaying(false)} onTimeUpdate={(event) => setSongTimeMs(event.currentTarget.currentTime * 1000)} onSeeked={(event) => { setSongTimeMs(event.currentTarget.currentTime * 1000); if (isLoopSeeking.current) isLoopSeeking.current = false; else resetScheduledNotes() }} />}
       <aside className="panel">
-        <div className="panel-hero"><span className="eyebrow">Beatmap DAW</span><h1>Flow Fight</h1><p>Import songs, align the beat grid, record lane events, then playtest the feel.</p></div>
+        <div className="panel-hero"><span className="eyebrow">Rhythm Game + Beatmap Studio</span><h1>Beat Fiend</h1><p>Import songs, align the beat grid, record lane events, then playtest the feel.</p></div>
         <Tabs value={activeTab} className="ui-tabs"><TabsList className="ui-tabs__list">{(['play', 'editor', 'config', 'debug'] as const).map((tab) => <TabsTrigger key={tab} value={tab} className="ui-tabs__trigger" onClick={() => setActiveTab(tab)}>{tab}</TabsTrigger>)}</TabsList></Tabs>
 
         {activeTab === 'play' && <>
@@ -1075,7 +1079,7 @@ function App() {
         </>}
 
         {activeTab === 'config' && <>
-          <Card className="import-card"><CardHeader><CardTitle>Import from YouTube</CardTitle><CardDescription>Paste a URL once. Flow Fight caches audio and metadata locally, then starts with a blank map.</CardDescription></CardHeader><div className="url-row"><Input type="url" placeholder="https://www.youtube.com/watch?v=..." value={youtubeUrl} onChange={(event) => setYoutubeUrl(event.target.value)} /><Button type="button" onClick={importYoutube} tooltip="Import YouTube audio">Import</Button></div>{importStatus && <p className="import-status">{importStatus}</p>}{importedSong && <div className="song-card"><strong>{importedSong.title}</strong><span>{Math.round(importedSong.durationMs / 1000)}s · {beatmap?.notes.length ?? importedSong.noteCount} notes</span><a href={importedSong.beatmapUrl} target="_blank">Open original beatmap JSON</a></div>}</Card>
+          <Card className="import-card"><CardHeader><CardTitle>Import from YouTube</CardTitle><CardDescription>Paste a URL once. Beat Fiend caches audio and metadata locally, then starts with a blank map.</CardDescription></CardHeader><div className="url-row"><Input type="url" placeholder="https://www.youtube.com/watch?v=..." value={youtubeUrl} onChange={(event) => setYoutubeUrl(event.target.value)} /><Button type="button" onClick={importYoutube} tooltip="Import YouTube audio">Import</Button></div>{importStatus && <p className="import-status">{importStatus}</p>}{importedSong && <div className="song-card"><strong>{importedSong.title}</strong><span>{Math.round(importedSong.durationMs / 1000)}s · {beatmap?.notes.length ?? importedSong.noteCount} notes</span><a href={importedSong.beatmapUrl} target="_blank">Open original beatmap JSON</a></div>}</Card>
           <Card><CardHeader><CardTitle>Controls</CardTitle><CardDescription>Configure keyboard event codes and Xbox-style gamepad buttons for each lane.</CardDescription></CardHeader><div className="controls-grid">{lanes.map((lane) => <div key={lane} className="control-row"><strong style={{ color: laneColor[lane] }}>{lane}</strong><Input value={controls[lane].keyboard} onChange={(event) => setControls((current) => ({ ...current, [lane]: { ...current[lane], keyboard: event.target.value } }))} /><Select value={String(controls[lane].gamepadButton)} onValueChange={(button) => setControls((current) => ({ ...current, [lane]: { ...current[lane], gamepadButton: Number(button) } }))}><SelectTrigger className="ui-select"><SelectValue>{(button: string | null) => button === null ? 'Select button...' : gamepadButtonLabels[Number(button)]}</SelectValue></SelectTrigger><SelectContent>{Object.entries(gamepadButtonLabels).map(([button, label]) => <SelectItem key={button} value={button}>{label}</SelectItem>)}</SelectContent></Select></div>)}</div><Button type="button" variant="secondary" onClick={() => setControls(defaultControls)} tooltip="Restore default keyboard and gamepad bindings">Reset controls</Button></Card>
         </>}
 

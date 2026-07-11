@@ -1,8 +1,8 @@
-# Flow Fight Design Notes: Open Browser Rhythm Game + Powerful Map Editor
+# Beat Fiend Design Notes: Open Browser Rhythm Game + Powerful Map Editor
 
 ## Current direction
 
-Flow Fight is now aimed at being an **open Guitar Hero / Beat Saber-style rhythm game that runs in the browser** and ships with a serious built-in map editor.
+Beat Fiend is now aimed at being an **open Guitar Hero / Beat Saber-style rhythm game that runs in the browser** and ships with a serious built-in map editor.
 
 The project should be understood as two tightly connected products:
 
@@ -15,11 +15,11 @@ The editor is not secondary. The core promise is:
 
 ## One-sentence pitch
 
-Flow Fight is an open, browser-based rhythm game and map editor where players can import songs, create charts by playing along, manually polish them on a DAW-like grid, and own/export their maps.
+Beat Fiend is an open, browser-based rhythm game and map editor where players can import songs, create charts by playing along, manually polish them on a DAW-like grid, and own/export their maps.
 
 ## Product identity
 
-Flow Fight should sit closest to:
+Beat Fiend should sit closest to:
 
 - Guitar Hero / Clone Hero
 - Beat Saber
@@ -199,7 +199,7 @@ BPM is fundamental editor state and must stick per song/beatmap. Future work sho
 
 ## Song/map ownership
 
-Flow Fight should be local-first by default:
+Beat Fiend should be local-first by default:
 
 - local imports
 - local cached audio

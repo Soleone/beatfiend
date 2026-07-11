@@ -1,6 +1,6 @@
-# Flow Fight
+# Beat Fiend
 
-Flow Fight is a local-first tiny beatmap DAW with a rhythm/parry playtest mode. The current focus is importing songs, aligning a 4/4 beat grid, recording lane events against the song timeline, refining beatmaps, and then playtesting the feel.
+Beat Fiend is a local-first tiny beatmap DAW with a rhythm-game playtest mode. The current focus is importing songs, aligning a 4/4 beat grid, recording lane events against the song timeline, refining beatmaps, and then playtesting the feel.
 
 ## Current controls
 
