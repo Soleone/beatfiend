@@ -175,7 +175,7 @@ async function listBeatmaps(songId) {
   for (const file of files.filter((name) => name.endsWith('.json'))) {
     try {
       const map = JSON.parse(await readFile(path.join(dir, file), 'utf8'))
-      maps.push({ id: map.id, title: map.title, difficulty: map.difficulty ?? 1, updatedAt: map.updatedAt, noteCount: map.notes?.length ?? 0, url: `/imports/${songId}/beatmaps/${file}` })
+      maps.push({ id: map.id, title: map.title, difficulty: map.difficulty ?? 1, version: map.version ?? 0, updatedAt: map.updatedAt, noteCount: map.notes?.length ?? 0, url: `/api/imports/${songId}/beatmaps/${map.id}` })
     } catch {}
   }
   return maps.sort((a, b) => String(a.title).localeCompare(String(b.title)))
@@ -200,7 +200,7 @@ async function listImports() {
         bpm: meta.bpm,
         beatOffsetMs: meta.beatOffsetMs,
         audioUrl: `/imports/${entry.name}/audio.mp3`,
-        beatmapUrl: primaryBeatmap?.url ?? `/imports/${entry.name}/beatmap.json`,
+        beatmapUrl: primaryBeatmap?.url ?? `/api/imports/${entry.name}/beatmap`,
         noteCount: primaryBeatmap?.noteCount ?? beatmap.notes?.length ?? 0,
         beatmaps,
       })
@@ -216,11 +216,40 @@ app.get('/api/health', (_req, res) => {
 })
 
 app.get('/api/imports', async (_req, res) => {
+  res.set('Cache-Control', 'no-store')
   res.json({ imports: await listImports() })
 })
 
 app.get('/api/imports/:songId/beatmaps', async (req, res) => {
-  res.json({ beatmaps: await listBeatmaps(req.params.songId) })
+  try {
+    res.set('Cache-Control', 'no-store')
+    res.json({ beatmaps: await listBeatmaps(req.params.songId) })
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : 'Invalid song' })
+  }
+})
+
+app.get('/api/imports/:songId/beatmap', async (req, res) => {
+  try {
+    const songId = assertSafeId(req.params.songId, 'song id')
+    const beatmap = JSON.parse(await readFile(songPath(importsDir, songId, 'beatmap.json'), 'utf8'))
+    res.set('Cache-Control', 'no-store')
+    res.json(beatmap)
+  } catch (error) {
+    res.status(404).json({ error: error instanceof Error ? error.message : 'Beatmap not found' })
+  }
+})
+
+app.get('/api/imports/:songId/beatmaps/:mapId', async (req, res) => {
+  try {
+    const songId = assertSafeId(req.params.songId, 'song id')
+    const id = assertSafeId(req.params.mapId, 'beatmap id')
+    const beatmap = JSON.parse(await readFile(songPath(importsDir, songId, 'beatmaps', `${id}.json`), 'utf8'))
+    res.set('Cache-Control', 'no-store')
+    res.json(beatmap)
+  } catch (error) {
+    res.status(404).json({ error: error instanceof Error ? error.message : 'Beatmap not found' })
+  }
 })
 
 app.patch('/api/imports/:songId', async (req, res) => {

@@ -118,15 +118,21 @@ function App() {
     setFeedback(null)
   }, [resetScheduledNotes])
 
+  const fetchJson = useCallback(async (url: string, init?: RequestInit) => {
+    const response = await fetch(url, { cache: 'no-store', ...init, headers: { ...(init?.headers ?? {}) } })
+    const data = await response.json()
+    if (!response.ok) throw new Error(data.error ?? `Request failed ${response.status}`)
+    return data
+  }, [])
+
   const loadImports = useCallback(async () => {
     try {
-      const response = await fetch('/api/imports')
-      const data = await response.json()
+      const data = await fetchJson('/api/imports')
       setSavedImports(data.imports ?? [])
     } catch {
       // Import server is optional during plain Vite dev.
     }
-  }, [])
+  }, [fetchJson])
 
   const loadImport = useCallback(async (song: ImportResult) => {
     resetGameplayPlayback()
@@ -136,13 +142,10 @@ function App() {
     setSongBeatmaps(song.beatmaps ?? [])
     setImportStatus(`Loading ${song.title}...`)
     try {
-      const beatmapResponse = await fetch(song.beatmapUrl)
-      if (!beatmapResponse.ok) throw new Error(`Failed to load beatmap ${beatmapResponse.status}`)
-      let loadedBeatmap = await beatmapResponse.json()
+      let loadedBeatmap = await fetchJson(song.beatmapUrl)
       const savedBeatmap = song.beatmaps?.find((map) => map.id === loadedBeatmap.id) ?? (song.beatmaps?.length === 1 ? song.beatmaps[0] : null)
       if (savedBeatmap?.url && savedBeatmap.url !== song.beatmapUrl) {
-        const savedBeatmapResponse = await fetch(savedBeatmap.url)
-        if (savedBeatmapResponse.ok) loadedBeatmap = await savedBeatmapResponse.json()
+        loadedBeatmap = await fetchJson(savedBeatmap.url)
       }
       const savedSongBpm = readStoredNumber(bpmStorageKey(song.id))
       const savedMapBpm = readStoredNumber(bpmStorageKey(song.id, loadedBeatmap.id))
@@ -163,7 +166,7 @@ function App() {
     } catch (error) {
       setImportStatus(error instanceof Error ? error.message : 'Failed to load song')
     }
-  }, [resetGameplayPlayback])
+  }, [fetchJson, resetGameplayPlayback])
 
   useEffect(() => { void loadImports() }, [loadImports])
 
@@ -389,13 +392,12 @@ function App() {
     const url = youtubeUrl.trim(); if (!url) return
     setImportStatus('Importing with local yt-dlp…')
     try {
-      const response = await fetch('/api/import-youtube', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) })
-      const data = await response.json(); if (!response.ok) throw new Error(data.error ?? 'Import failed')
+      const data = await fetchJson('/api/import-youtube', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) })
       await loadImport(data)
       await loadImports()
       setImportStatus(`${data.cached ? 'Loaded cached' : 'Imported'} ${data.noteCount} notes`)
     } catch (error) { setImportStatus(error instanceof Error ? error.message : String(error)) }
-  }, [loadImport, loadImports, youtubeUrl])
+  }, [fetchJson, loadImport, loadImports, youtubeUrl])
 
   const startRecording = useCallback(() => {
     if (!audioRef.current) return
@@ -433,48 +435,62 @@ function App() {
 
   const saveBeatmap = useCallback(async (saveAsNew = false) => {
     if (!beatmap || !importedSong) return
-    const id = saveAsNew ? `${mapTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}-${Date.now().toString(36)}` : beatmap.id
-    const editable = { ...beatmap, id, title: mapTitle, difficulty, bpm, beatOffsetMs, songId: importedSong.id, source: 'manual' }
-    const response = await fetch(`/api/imports/${importedSong.id}/beatmaps`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ beatmap: editable }) })
-    const data = await response.json()
-    if (!response.ok) throw new Error(data.error ?? 'Save failed')
-    setBeatmap(normalizeBeatmap(data.beatmap))
-    localStorage.setItem(bpmStorageKey(importedSong.id, data.beatmap.id) ?? '', String(bpm))
-    localStorage.setItem(bpmStorageKey(importedSong.id) ?? '', String(bpm))
-    localStorage.setItem(beatOffsetStorageKey(importedSong.id, data.beatmap.id) ?? '', String(beatOffsetMs))
-    localStorage.setItem(beatOffsetStorageKey(importedSong.id) ?? '', String(beatOffsetMs))
-    setSongBeatmaps(data.beatmaps ?? [])
-    setImportStatus(`Saved ${data.beatmap.title} v${data.beatmap.version}`)
-  }, [beatOffsetMs, beatmap, bpm, difficulty, importedSong, mapTitle])
+    try {
+      const id = saveAsNew ? `${mapTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}-${Date.now().toString(36)}` : beatmap.id
+      const editable = { ...beatmap, id, title: mapTitle, difficulty, bpm, beatOffsetMs, songId: importedSong.id, source: 'manual' }
+      setImportStatus(`Saving ${mapTitle}...`)
+      const data = await fetchJson(`/api/imports/${importedSong.id}/beatmaps`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ beatmap: editable }) })
+      setBeatmap(normalizeBeatmap(data.beatmap))
+      localStorage.setItem(bpmStorageKey(importedSong.id, data.beatmap.id) ?? '', String(bpm))
+      localStorage.setItem(bpmStorageKey(importedSong.id) ?? '', String(bpm))
+      localStorage.setItem(beatOffsetStorageKey(importedSong.id, data.beatmap.id) ?? '', String(beatOffsetMs))
+      localStorage.setItem(beatOffsetStorageKey(importedSong.id) ?? '', String(beatOffsetMs))
+      setSongBeatmaps(data.beatmaps ?? [])
+      setSavedImports((imports) => imports.map((song) => song.id === importedSong.id ? { ...song, beatmaps: data.beatmaps ?? song.beatmaps, noteCount: data.beatmap.notes?.length ?? song.noteCount, beatmapUrl: `/api/imports/${importedSong.id}/beatmaps/${data.beatmap.id}` } : song))
+      setImportStatus(`Saved ${data.beatmap.title} v${data.beatmap.version}`)
+    } catch (error) {
+      setImportStatus(error instanceof Error ? error.message : 'Save failed')
+    }
+  }, [beatOffsetMs, beatmap, bpm, difficulty, fetchJson, importedSong, mapTitle])
 
   const loadBeatmap = useCallback(async (mapId: string) => {
     resetGameplayPlayback()
     const map = songBeatmaps.find((item) => item.id === mapId)
     if (!map) return
-    const response = await fetch(map.url)
-    const loaded = await response.json()
-    setBeatmap(normalizeBeatmap(loaded))
-    setMapTitle(loaded.title)
-    setDifficulty(loaded.difficulty ?? 1)
-    const songId = loaded.songId ?? importedSong?.id
-    const savedSongBpm = readStoredNumber(bpmStorageKey(songId))
-    const savedMapBpm = readStoredNumber(bpmStorageKey(songId, loaded.id))
-    const savedSongBeatOffset = readStoredNumber(beatOffsetStorageKey(songId))
-    const savedMapBeatOffset = readStoredNumber(beatOffsetStorageKey(songId, loaded.id))
-    const nextBpm = savedSongBpm && savedSongBpm > 0 ? savedSongBpm : importedSong?.bpm && importedSong.bpm > 0 ? importedSong.bpm : savedMapBpm && savedMapBpm > 0 ? savedMapBpm : loaded.bpm ?? 120
-    const nextBeatOffsetMs = savedSongBeatOffset ?? importedSong?.beatOffsetMs ?? savedMapBeatOffset ?? loaded.beatOffsetMs ?? 0
-    setBpm(nextBpm)
-    setBeatOffsetMs(nextBeatOffsetMs)
-    if (songId) persistedCalibration.current = `${songId}:${nextBpm}:${nextBeatOffsetMs}`
-    resetGameplayPlayback()
-  }, [importedSong, resetGameplayPlayback, songBeatmaps])
+    try {
+      setImportStatus(`Loading ${map.title}...`)
+      const loaded = await fetchJson(map.url)
+      setBeatmap(normalizeBeatmap(loaded))
+      setMapTitle(loaded.title)
+      setDifficulty(loaded.difficulty ?? 1)
+      const songId = loaded.songId ?? importedSong?.id
+      const savedSongBpm = readStoredNumber(bpmStorageKey(songId))
+      const savedMapBpm = readStoredNumber(bpmStorageKey(songId, loaded.id))
+      const savedSongBeatOffset = readStoredNumber(beatOffsetStorageKey(songId))
+      const savedMapBeatOffset = readStoredNumber(beatOffsetStorageKey(songId, loaded.id))
+      const nextBpm = savedSongBpm && savedSongBpm > 0 ? savedSongBpm : importedSong?.bpm && importedSong.bpm > 0 ? importedSong.bpm : savedMapBpm && savedMapBpm > 0 ? savedMapBpm : loaded.bpm ?? 120
+      const nextBeatOffsetMs = savedSongBeatOffset ?? importedSong?.beatOffsetMs ?? savedMapBeatOffset ?? loaded.beatOffsetMs ?? 0
+      setBpm(nextBpm)
+      setBeatOffsetMs(nextBeatOffsetMs)
+      if (songId) persistedCalibration.current = `${songId}:${nextBpm}:${nextBeatOffsetMs}`
+      resetGameplayPlayback()
+      setImportStatus(`Loaded ${loaded.title ?? map.title} v${loaded.version ?? 0}`)
+    } catch (error) {
+      setImportStatus(error instanceof Error ? error.message : 'Failed to load beatmap')
+    }
+  }, [fetchJson, importedSong, resetGameplayPlayback, songBeatmaps])
+
+  const refreshSaveState = useCallback(async () => {
+    await loadImports()
+    if (beatmap?.id) await loadBeatmap(beatmap.id)
+    setImportStatus('Reloaded save state from disk')
+  }, [beatmap?.id, loadBeatmap, loadImports])
 
   const deleteBeatmap = useCallback(async () => {
     if (!beatmap || !importedSong) return
     const deletedTitle = mapTitle
-    const response = await fetch(`/api/imports/${importedSong.id}/beatmaps/${beatmap.id}`, { method: 'DELETE' })
-    const data = await response.json()
-    if (!response.ok) throw new Error(data.error ?? 'Delete failed')
+    try {
+      const data = await fetchJson(`/api/imports/${importedSong.id}/beatmaps/${beatmap.id}`, { method: 'DELETE' })
     const remaining = data.beatmaps ?? []
     setSongBeatmaps(remaining)
     setSavedImports((imports) => imports.map((song) => song.id === importedSong.id ? { ...song, beatmaps: remaining } : song))
@@ -483,7 +499,7 @@ function App() {
     setDeleteOpen(false)
     resetScheduledNotes()
     if (remaining[0]) {
-      const next = await fetch(remaining[0].url).then((item) => item.json())
+      const next = await fetchJson(remaining[0].url)
       setBeatmap(normalizeBeatmap(next))
       setMapTitle(next.title)
       setDifficulty(next.difficulty ?? 1)
@@ -492,7 +508,10 @@ function App() {
       setBeatmap({ id: `new-${Date.now().toString(36)}`, songId: importedSong.id, title, difficulty, bpm, beatOffsetMs, durationMs: importedSong.durationMs, notes: [] })
       setMapTitle(title)
     }
-  }, [beatOffsetMs, beatmap, bpm, difficulty, importedSong, mapTitle, resetScheduledNotes])
+    } catch (error) {
+      setImportStatus(error instanceof Error ? error.message : 'Delete failed')
+    }
+  }, [beatOffsetMs, beatmap, bpm, difficulty, fetchJson, importedSong, mapTitle, resetScheduledNotes])
 
   const createBlankBeatmap = useCallback(() => {
     if (!importedSong) return
@@ -911,7 +930,7 @@ function App() {
           <Card><CardHeader><CardTitle>Controls</CardTitle><CardDescription>Configure keyboard event codes and Xbox-style gamepad buttons for each lane.</CardDescription></CardHeader><div className="controls-grid">{lanes.map((lane) => <div key={lane} className="control-row"><strong style={{ color: laneColor[lane] }}>{lane}</strong><Input value={controls[lane].keyboard} onChange={(event) => setControls((current) => ({ ...current, [lane]: { ...current[lane], keyboard: event.target.value } }))} /><Select value={String(controls[lane].gamepadButton)} onChange={(event) => setControls((current) => ({ ...current, [lane]: { ...current[lane], gamepadButton: Number(event.target.value) } }))}>{Object.entries(gamepadButtonLabels).map(([button, label]) => <option key={button} value={button}>{label}</option>)}</Select></div>)}</div><Button type="button" variant="secondary" onClick={() => setControls(defaultControls)} tooltip="Restore default keyboard and gamepad bindings">Reset controls</Button></Card>
         </>}
 
-        {activeTab === 'debug' && <><Card><CardHeader><CardTitle>Tuning</CardTitle><CardDescription>Adjust judgement windows and projectile timing.</CardDescription></CardHeader>{rows.map(([label, value, min, max, unit, key]) => <Field key={key}><FieldLabel>{label}: <strong>{value}{unit}</strong></FieldLabel><Slider min={min} max={max} value={value} onChange={(e) => setTuning((t) => ({ ...t, [key]: Number(e.target.value) }))} /></Field>)}</Card><Card className="timing-debug-card"><CardHeader><CardTitle>Timing debug</CardTitle></CardHeader><Stack><code>zero point: leading edge touches shield</code><code>active projectiles: {activeAttacks.length}</code><code>impactTime: {currentAttack ? currentAttack.impactMs.toFixed(2) : '-'}ms</code><code>this travel: {currentAttack ? currentAttack.travelMs.toFixed(0) : '-'}ms</code><code>song mode: {isSongPlaying && beatmap ? `${beatmap.notes.length} notes` : 'off'}</code><code>parry: ±{tuning.parryWindowMs}ms ({tuning.parryWindowMs * 2}ms total)</code><code>perfect: ±{tuning.perfectWindowMs}ms ({tuning.perfectWindowMs * 2}ms total)</code><code>delta: {lastResult ? `${lastResult.deltaMs.toFixed(2)}ms` : '-'}</code><code>result: {lastResult ? `${lastResult.grade} / ${lastResult.success ? 'success' : 'miss'}` : '-'}</code></Stack></Card></>}
+        {activeTab === 'debug' && <><Card><CardHeader><CardTitle>Save trust</CardTitle><CardDescription>Force a fresh read from the local server if the browser or UI looks stale.</CardDescription></CardHeader><Stack><Button type="button" variant="secondary" onClick={() => void refreshSaveState()} disabled={!importedSong}>Reload saved beatmap from disk</Button><code>current map: {beatmap ? `${beatmap.title} v${beatmap.version ?? 0} (${beatmap.notes.length} notes)` : '-'}</code><code>status: {importStatus || '-'}</code></Stack></Card><Card><CardHeader><CardTitle>Tuning</CardTitle><CardDescription>Adjust judgement windows and projectile timing.</CardDescription></CardHeader>{rows.map(([label, value, min, max, unit, key]) => <Field key={key}><FieldLabel>{label}: <strong>{value}{unit}</strong></FieldLabel><Slider min={min} max={max} value={value} onChange={(e) => setTuning((t) => ({ ...t, [key]: Number(e.target.value) }))} /></Field>)}</Card><Card className="timing-debug-card"><CardHeader><CardTitle>Timing debug</CardTitle></CardHeader><Stack><code>zero point: leading edge touches shield</code><code>active projectiles: {activeAttacks.length}</code><code>impactTime: {currentAttack ? currentAttack.impactMs.toFixed(2) : '-'}ms</code><code>this travel: {currentAttack ? currentAttack.travelMs.toFixed(0) : '-'}ms</code><code>song mode: {isSongPlaying && beatmap ? `${beatmap.notes.length} notes` : 'off'}</code><code>parry: ±{tuning.parryWindowMs}ms ({tuning.parryWindowMs * 2}ms total)</code><code>perfect: ±{tuning.perfectWindowMs}ms ({tuning.perfectWindowMs * 2}ms total)</code><code>delta: {lastResult ? `${lastResult.deltaMs.toFixed(2)}ms` : '-'}</code><code>result: {lastResult ? `${lastResult.grade} / ${lastResult.success ? 'success' : 'miss'}` : '-'}</code></Stack></Card></>}
       </aside>
     </main>
   )
