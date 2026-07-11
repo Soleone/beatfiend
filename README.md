@@ -2,6 +2,8 @@
 
 Beat Fiend is a local-first tiny beatmap DAW with a rhythm-game playtest mode. The current focus is importing songs, aligning a 4/4 beat grid, recording lane events against the song timeline, refining beatmaps, and then playtesting the feel.
 
+<img width="3726" height="1536" alt="image" src="https://github.com/user-attachments/assets/ebad07ec-73cf-47b3-bf62-45b395d33a4a" />
+
 ## Current controls
 
 - `Space` - kick lane
