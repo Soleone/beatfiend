@@ -1,6 +1,6 @@
 export type Lane = 'kick' | 'snare' | 'low' | 'mid' | 'high'
 export type Tuning = { parryWindowMs: number; perfectWindowMs: number; telegraphMs: number; recoveryMs: number; inputOffsetMs: number }
-export type Attack = { id: number; startMs: number; impactMs: number; travelMs: number; lane?: Lane; durationMs?: number; noteId?: string; scheduleKey?: string }
+export type Attack = { id: number; startMs: number; impactMs: number; travelMs: number; lane?: Lane; durationMs?: number; holdStarted?: boolean; initialMissed?: boolean; noteId?: string; scheduleKey?: string }
 export type FeedbackEvent = { id: number; kind: 'good-parry' | 'perfect-parry' | 'miss'; startedAtMs: number; lane?: Lane }
 export type SavedBeatmap = { id: string; title: string; difficulty: number; updatedAt?: string; noteCount: number; url: string }
 export type ImportResult = { id: string; title: string; durationMs: number; audioUrl: string; beatmapUrl: string; noteCount: number; sourceUrl?: string; cached?: boolean; bpm?: number; beatOffsetMs?: number; beatmaps?: SavedBeatmap[] }

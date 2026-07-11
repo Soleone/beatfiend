@@ -3,7 +3,7 @@
   "songId": "JTCgb8U2eL",
   "title": "Soleone 2",
   "difficulty": 2,
-  "version": 29,
+  "version": 28,
   "bpm": 104,
   "beatOffsetMs": 9019.23,
   "durationMs": 179093,
@@ -2076,7 +2076,16 @@
       "id": "manual-hold-1783749479861-109404",
       "impactTimeMs": 109403.84538461537,
       "rawTimeMs": 109423.75601754386,
-      "durationMs": 2019.2307692307804,
+      "durationMs": 1009.6153846153902,
+      "lane": "low",
+      "strength": 1,
+      "source": "manual-hold"
+    },
+    {
+      "id": "manual-hold-1783749276542-110558",
+      "impactTimeMs": 110557.69153846153,
+      "rawTimeMs": 110572.06021052632,
+      "durationMs": 865.3846153846243,
       "lane": "low",
       "strength": 1,
       "source": "manual-hold"
@@ -2942,6 +2951,6 @@
       "source": "manual-grid-paste"
     }
   ],
-  "updatedAt": "2026-07-11T06:37:32.173Z",
+  "updatedAt": "2026-07-11T06:12:24.588Z",
   "createdAt": "2026-07-09T03:24:01.822Z"
 }

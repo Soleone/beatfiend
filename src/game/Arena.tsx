@@ -6,12 +6,18 @@ import { useRef } from 'react'
 import { attackPhase } from './timing'
 import { clamp01, judgementColors, laneColor, laneY, type Attack, type FeedbackEvent, type Lane, type Tuning } from './model'
 
+function holdVisualLength(durationMs = 0) {
+  return Math.min(1.45, 0.42 + durationMs / 2200)
+}
+
 function ProjectileVisual({ attack, hidden }: { attack: Attack; hidden: boolean }) {
   const projectile = useRef<Mesh>(null)
+  const holdTrail = useRef<Mesh>(null)
   const ghosts = useRef<Array<Mesh | null>>([])
   const lane = attack.lane ?? 'mid'
   const color = laneColor[lane]
-  const isHold = (attack.durationMs ?? 0) >= 200
+  const isHold = (attack.durationMs ?? 0) > 0
+  const holdLength = holdVisualLength(attack.durationMs)
 
   useFrame(() => {
     const now = performance.now()
@@ -27,7 +33,11 @@ function ProjectileVisual({ attack, hidden }: { attack: Attack; hidden: boolean 
     if (projectile.current) {
       projectile.current.position.x = x
       projectile.current.position.y = y
-      projectile.current.visible = !hidden && now >= attack.startMs && impactAge < 120
+      projectile.current.visible = !isHold && !hidden && now >= attack.startMs && impactAge < 120
+    }
+    if (holdTrail.current) {
+      holdTrail.current.position.set(x + holdLength / 2, y, 0.1)
+      holdTrail.current.visible = isHold && !hidden && now >= attack.startMs && impactAge < 120
     }
 
     ghosts.current.forEach((ghost, index) => {
@@ -48,6 +58,10 @@ function ProjectileVisual({ attack, hidden }: { attack: Attack; hidden: boolean 
           <meshStandardMaterial color={color} emissive={color} transparent opacity={opacity} />
         </mesh>
       ))}
+      {isHold ? <mesh ref={holdTrail} position={[1.6, laneY[lane], 0.1]} rotation={[0, 0, -Math.PI / 2]} visible={false}>
+        <capsuleGeometry args={[0.15, Math.max(0.01, holdLength - 0.3), 8, 20]} />
+        <meshStandardMaterial color={color} emissive={color} emissiveIntensity={1.25} />
+      </mesh> : null}
       <mesh ref={projectile} position={[1.6, laneY[lane], 0.12]} visible={false}>
         <sphereGeometry args={[isHold ? 0.18 : 0.09, 32, 16]} />
         <meshStandardMaterial color={color} emissive={color} />
@@ -56,13 +70,15 @@ function ProjectileVisual({ attack, hidden }: { attack: Attack; hidden: boolean 
   )
 }
 
-export function Arena({ attacks, tuning, parryPulse, feedback, padTriggers, onPhaseChange }: { attacks: Attack[]; tuning: Tuning; parryPulse: number; feedback: FeedbackEvent | null; padTriggers: Record<Lane, number>; onPhaseChange: (phase: string) => void }) {
+export function Arena({ attacks, tuning, parryPulse, feedback, padTriggers, heldLanes, onPhaseChange }: { attacks: Attack[]; tuning: Tuning; parryPulse: number; feedback: FeedbackEvent | null; padTriggers: Record<Lane, number>; heldLanes: Set<Lane>; onPhaseChange: (phase: string) => void }) {
   const impactFlash = useRef<Mesh>(null)
   const cannonRefs = useRef<Partial<Record<Lane, Group | null>>>({})
   const parryShield = useRef<Mesh>(null)
   const padRefs = useRef<Partial<Record<Lane, Mesh | null>>>({})
   const padMaterials = useRef<Partial<Record<Lane, MeshStandardMaterial | null>>>({})
   const burst = useRef<Group>(null)
+  const grindSparks = useRef<Partial<Record<Lane, Group | null>>>({})
+  const holdMeters = useRef<Partial<Record<Lane, Mesh | null>>>({})
   const primaryAttack = attacks[0]
 
   useFrame(() => {
@@ -111,10 +127,29 @@ export function Arena({ attacks, tuning, parryPulse, feedback, padTriggers, onPh
       const material = padMaterials.current[typedLane]
       const triggerAge = now - (padTriggers[typedLane] || -Infinity)
       const trigger = triggerAge >= 0 && triggerAge < 130 ? Math.sin((1 - triggerAge / 130) * Math.PI) : 0
+      const activeHold = attacks.find((attack) => (attack.durationMs ?? 0) > 0 && (attack.lane ?? 'mid') === typedLane && now >= attack.impactMs && now <= attack.impactMs + (attack.durationMs ?? 0))
+      const grinding = Boolean(activeHold?.holdStarted && heldLanes.has(typedLane))
+      const grindJitter = grinding ? Math.sin(now / 22) * 0.009 : 0
       if (pad) {
-        pad.position.x = -1.02 + trigger * 0.075
-        pad.scale.y = 1 + padFlash * 0.18
-        pad.scale.x = 1 + padFlash * 0.12
+        pad.position.x = -1.02 + trigger * 0.075 - (grinding ? 0.055 : 0)
+        pad.position.y = laneY[typedLane] + grindJitter
+        pad.scale.y = 1 + padFlash * 0.18 - (grinding ? 0.28 : 0)
+        pad.scale.x = 1 + padFlash * 0.12 + (grinding ? 0.38 : 0)
+      }
+      const sparks = grindSparks.current[typedLane]
+      if (sparks) {
+        sparks.visible = grinding
+        sparks.rotation.z = now / 75
+        sparks.scale.setScalar(0.82 + Math.sin(now / 31) * 0.16)
+      }
+      const holdMeter = holdMeters.current[typedLane]
+      if (holdMeter) {
+        const progress = activeHold ? clamp01((now - activeHold.impactMs) / (activeHold.durationMs ?? 1)) : 1
+        const remaining = 1 - progress
+        holdMeter.visible = Boolean(activeHold)
+        const meterLength = holdVisualLength(activeHold?.durationMs)
+        holdMeter.scale.x = Math.max(0.001, meterLength * remaining)
+        holdMeter.position.x = -0.91 + meterLength * remaining / 2
       }
       if (material) {
         const baseColor = new Color(color)
@@ -149,6 +184,13 @@ export function Arena({ attacks, tuning, parryPulse, feedback, padTriggers, onPh
               <boxGeometry args={[0.065, 0.18, 0.12]} />
               <meshStandardMaterial ref={(material) => { padMaterials.current[typedLane] = material }} color={color} emissive={color} />
             </mesh>
+            <mesh ref={(mesh) => { holdMeters.current[typedLane] = mesh }} position={[-0.46, laneY[typedLane], 0.16]} visible={false}>
+              <boxGeometry args={[1, 0.035, 0.025]} />
+              <meshBasicMaterial color={color} toneMapped={false} />
+            </mesh>
+            <group ref={(group) => { grindSparks.current[typedLane] = group }} position={[-0.9, laneY[typedLane], 0.22]} visible={false}>
+              {[0, 1, 2, 3, 4, 5].map((index) => <mesh key={index} rotation={[0, 0, index * Math.PI / 3]} position={[0.1, 0, 0]}><boxGeometry args={[0.11, 0.016, 0.016]} /><meshBasicMaterial color={index % 2 ? '#ff9f43' : '#ffd166'} toneMapped={false} /></mesh>)}
+            </group>
             <Text position={[-1.23, laneY[typedLane] - 0.01, 0.12]} fontSize={0.07} color="#edf3ff" anchorX="center">{typedLane.toUpperCase()}</Text>
           </group>
         )

@@ -3,7 +3,7 @@
   "songId": "JTCgb8U2eL",
   "title": "Soleone 2",
   "difficulty": 2,
-  "version": 29,
+  "version": 26,
   "bpm": 104,
   "beatOffsetMs": 9019.23,
   "durationMs": 179093,
@@ -2076,7 +2076,16 @@
       "id": "manual-hold-1783749479861-109404",
       "impactTimeMs": 109403.84538461537,
       "rawTimeMs": 109423.75601754386,
-      "durationMs": 2019.2307692307804,
+      "durationMs": 1009.6153846153902,
+      "lane": "low",
+      "strength": 1,
+      "source": "manual-hold"
+    },
+    {
+      "id": "manual-hold-1783749276542-110558",
+      "impactTimeMs": 110557.69153846153,
+      "rawTimeMs": 110572.06021052632,
+      "durationMs": 865.3846153846243,
       "lane": "low",
       "strength": 1,
       "source": "manual-hold"
@@ -2100,29 +2109,29 @@
       "source": "manual-hold"
     },
     {
-      "id": "manual-1783749605269-114019",
-      "impactTimeMs": 114019.23,
-      "rawTimeMs": 114031.83705263157,
+      "id": "manual-1783749570160-114308",
+      "impactTimeMs": 114307.69153846153,
+      "rawTimeMs": 114300.33689473684,
       "lane": "low",
       "strength": 1,
       "source": "manual-grid"
     },
     {
-      "id": "manual-1783749611614-114596",
-      "impactTimeMs": 114596.15307692307,
-      "rawTimeMs": 114566.83940350878,
+      "id": "manual-1783749575613-114740",
+      "impactTimeMs": 114740.38384615384,
+      "rawTimeMs": 114793.59470175438,
       "lane": "low",
       "strength": 1,
       "source": "manual-grid"
     },
     {
       "id": "paste-1783749519510-0-manual-hold-1783749273241-111712",
-      "impactTimeMs": 115173.07615384615,
-      "rawTimeMs": 115195.70393522269,
-      "durationMs": 1153.8461538461415,
+      "impactTimeMs": 115461.53769230768,
+      "rawTimeMs": 115484.16547368422,
+      "durationMs": 865.3846153846098,
       "lane": "mid",
       "strength": 1,
-      "source": "manual-hold"
+      "source": "manual-hold-paste"
     },
     {
       "id": "paste-1783749504457-0-manual-hold-1783749270331-112288",
@@ -2788,160 +2797,8 @@
       "lane": "kick",
       "strength": 1,
       "source": "manual-grid-paste-repeat-repeat-repeat-repeat-paste-repeat-repeat-duplicate"
-    },
-    {
-      "id": "manual-1783750008040-156135",
-      "impactTimeMs": 156134.61461538463,
-      "rawTimeMs": 156101.1058434548,
-      "lane": "kick",
-      "strength": 1,
-      "source": "manual-grid"
-    },
-    {
-      "id": "manual-1783750030954-157577",
-      "impactTimeMs": 157360.57615384617,
-      "rawTimeMs": 157345.5936356275,
-      "lane": "low",
-      "strength": 1,
-      "source": "manual-grid"
-    },
-    {
-      "id": "manual-1783750041724-157793",
-      "impactTimeMs": 157649.0376923077,
-      "rawTimeMs": 157647.86330094468,
-      "lane": "low",
-      "strength": 1,
-      "source": "manual-grid"
-    },
-    {
-      "id": "manual-1783750044439-158082",
-      "impactTimeMs": 157865.38384615385,
-      "rawTimeMs": 157856.44967071526,
-      "lane": "low",
-      "strength": 1,
-      "source": "manual-grid"
-    },
-    {
-      "id": "manual-1783750164899-159812",
-      "impactTimeMs": 159812.49923076923,
-      "rawTimeMs": 159811.55793522266,
-      "lane": "low",
-      "strength": 1,
-      "source": "manual-grid"
-    },
-    {
-      "id": "paste-1783750162190-1-manual-1783750041724-157793",
-      "impactTimeMs": 160100.96076923076,
-      "rawTimeMs": 160099.78637786774,
-      "lane": "low",
-      "strength": 1,
-      "source": "manual-grid-paste"
-    },
-    {
-      "id": "paste-1783750162190-2-manual-1783750044439-158082",
-      "impactTimeMs": 160317.30692307692,
-      "rawTimeMs": 160308.37274763832,
-      "lane": "low",
-      "strength": 1,
-      "source": "manual-grid-paste"
-    },
-    {
-      "id": "manual-1783750173621-160750",
-      "impactTimeMs": 160749.99923076923,
-      "rawTimeMs": 160743.80080701754,
-      "lane": "mid",
-      "strength": 1,
-      "source": "manual-grid"
-    },
-    {
-      "id": "manual-1783750183191-161111",
-      "impactTimeMs": 161110.57615384617,
-      "rawTimeMs": 161103.57650877195,
-      "lane": "mid",
-      "strength": 1,
-      "source": "manual-grid"
-    },
-    {
-      "id": "manual-1783750203583-161327",
-      "impactTimeMs": 161326.92230769232,
-      "rawTimeMs": 161321.4616140351,
-      "lane": "low",
-      "strength": 1,
-      "source": "manual-grid"
-    },
-    {
-      "id": "paste-1783750231454-0-manual-1783750164899-159812",
-      "impactTimeMs": 162120.19153846154,
-      "rawTimeMs": 162119.25024291498,
-      "lane": "low",
-      "strength": 1,
-      "source": "manual-grid-paste"
-    },
-    {
-      "id": "paste-1783750231454-1-paste-1783750162190-1-manual-1783750041724-157793",
-      "impactTimeMs": 162408.65307692307,
-      "rawTimeMs": 162407.47868556005,
-      "lane": "low",
-      "strength": 1,
-      "source": "manual-grid-paste-paste"
-    },
-    {
-      "id": "paste-1783750231454-2-paste-1783750162190-2-manual-1783750044439-158082",
-      "impactTimeMs": 162624.99923076923,
-      "rawTimeMs": 162616.06505533063,
-      "lane": "low",
-      "strength": 1,
-      "source": "manual-grid-paste-paste"
-    },
-    {
-      "id": "paste-1783750306308-0-manual-1783750164899-159812",
-      "impactTimeMs": 164427.88384615385,
-      "rawTimeMs": 164426.9425506073,
-      "lane": "low",
-      "strength": 1,
-      "source": "manual-grid-paste"
-    },
-    {
-      "id": "paste-1783750306308-1-paste-1783750162190-1-manual-1783750041724-157793",
-      "impactTimeMs": 164716.3453846154,
-      "rawTimeMs": 164715.17099325237,
-      "lane": "low",
-      "strength": 1,
-      "source": "manual-grid-paste-paste"
-    },
-    {
-      "id": "paste-1783750306308-2-paste-1783750162190-2-manual-1783750044439-158082",
-      "impactTimeMs": 164932.69153846154,
-      "rawTimeMs": 164923.75736302295,
-      "lane": "low",
-      "strength": 1,
-      "source": "manual-grid-paste-paste"
-    },
-    {
-      "id": "paste-1783750306308-3-manual-1783750173621-160750",
-      "impactTimeMs": 165365.38384615385,
-      "rawTimeMs": 165359.18542240217,
-      "lane": "mid",
-      "strength": 1,
-      "source": "manual-grid-paste"
-    },
-    {
-      "id": "paste-1783750306308-4-manual-1783750183191-161111",
-      "impactTimeMs": 165725.9607692308,
-      "rawTimeMs": 165718.96112415657,
-      "lane": "mid",
-      "strength": 1,
-      "source": "manual-grid-paste"
-    },
-    {
-      "id": "paste-1783750306308-5-manual-1783750203583-161327",
-      "impactTimeMs": 165942.30692307695,
-      "rawTimeMs": 165936.84622941972,
-      "lane": "low",
-      "strength": 1,
-      "source": "manual-grid-paste"
     }
   ],
-  "updatedAt": "2026-07-11T06:37:32.173Z",
+  "updatedAt": "2026-07-11T05:59:54.287Z",
   "createdAt": "2026-07-09T03:24:01.822Z"
 }
