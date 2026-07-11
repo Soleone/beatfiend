@@ -1,0 +1,110 @@
+{
+  "id": "vLM24sL-Ee",
+  "songId": "vLM24sL-Ee",
+  "title": "Soleone",
+  "difficulty": 1,
+  "version": 2,
+  "bpm": 130,
+  "beatOffsetMs": 1096.153,
+  "durationMs": 247281,
+  "notes": [
+    {
+      "id": "manual-1783726048138-1096",
+      "impactTimeMs": 1096.153,
+      "rawTimeMs": 1117.1929824561405,
+      "lane": "kick",
+      "strength": 1,
+      "source": "manual-grid"
+    },
+    {
+      "id": "manual-1783726048913-1558",
+      "impactTimeMs": 1557.6914615384617,
+      "rawTimeMs": 1549.4736842105262,
+      "lane": "kick",
+      "strength": 1,
+      "source": "manual-grid"
+    },
+    {
+      "id": "manual-1783726049571-2019",
+      "impactTimeMs": 2019.2299230769231,
+      "rawTimeMs": 2004.2105263157896,
+      "lane": "kick",
+      "strength": 1,
+      "source": "manual-grid"
+    },
+    {
+      "id": "manual-1783726050396-2481",
+      "impactTimeMs": 2480.768384615385,
+      "rawTimeMs": 2498.245614035088,
+      "lane": "kick",
+      "strength": 1,
+      "source": "manual-grid"
+    },
+    {
+      "id": "repeat-1783726053021-1-manual-1783726048138-1096",
+      "impactTimeMs": 2942.306846153846,
+      "rawTimeMs": 2963.346828609987,
+      "lane": "kick",
+      "strength": 1,
+      "source": "manual-grid-repeat"
+    },
+    {
+      "id": "repeat-1783726053021-1-manual-1783726048913-1558",
+      "impactTimeMs": 3403.845307692308,
+      "rawTimeMs": 3395.6275303643724,
+      "lane": "kick",
+      "strength": 1,
+      "source": "manual-grid-repeat"
+    },
+    {
+      "id": "repeat-1783726053021-1-manual-1783726049571-2019",
+      "impactTimeMs": 3865.3837692307693,
+      "rawTimeMs": 3850.364372469636,
+      "lane": "kick",
+      "strength": 1,
+      "source": "manual-grid-repeat"
+    },
+    {
+      "id": "repeat-1783726053021-1-manual-1783726050396-2481",
+      "impactTimeMs": 4326.922230769231,
+      "rawTimeMs": 4344.3994601889335,
+      "lane": "kick",
+      "strength": 1,
+      "source": "manual-grid-repeat"
+    },
+    {
+      "id": "repeat-1783726053576-1-repeat-1783726053021-1-manual-1783726048138-1096",
+      "impactTimeMs": 4788.460692307692,
+      "rawTimeMs": 4809.500674763833,
+      "lane": "kick",
+      "strength": 1,
+      "source": "manual-grid-repeat-repeat"
+    },
+    {
+      "id": "repeat-1783726053576-1-repeat-1783726053021-1-manual-1783726048913-1558",
+      "impactTimeMs": 5249.9991538461545,
+      "rawTimeMs": 5241.781376518218,
+      "lane": "kick",
+      "strength": 1,
+      "source": "manual-grid-repeat-repeat"
+    },
+    {
+      "id": "repeat-1783726053576-1-repeat-1783726053021-1-manual-1783726049571-2019",
+      "impactTimeMs": 5711.5376153846155,
+      "rawTimeMs": 5696.5182186234815,
+      "lane": "kick",
+      "strength": 1,
+      "source": "manual-grid-repeat-repeat"
+    },
+    {
+      "id": "repeat-1783726053576-1-repeat-1783726053021-1-manual-1783726050396-2481",
+      "impactTimeMs": 6173.0760769230765,
+      "rawTimeMs": 6190.553306342779,
+      "lane": "kick",
+      "strength": 1,
+      "source": "manual-grid-repeat-repeat"
+    }
+  ],
+  "updatedAt": "2026-07-10T23:27:36.782Z",
+  "createdAt": "2026-07-10T23:24:33.950Z"
+}
