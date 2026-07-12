@@ -1271,7 +1271,7 @@ function App() {
             <CardContent className="import-card__content">
               <div className="url-row">
                 <Input type="url" aria-label="YouTube URL" placeholder="Paste a YouTube URL" value={youtubeUrl} onChange={(event) => setYoutubeUrl(event.target.value)} />
-                <Button type="button" onClick={activeImportJobId ? cancelCompanionImport : importYoutube} tooltip={activeImportJobId ? 'Cancel local import' : 'Import YouTube audio locally'}>{activeImportJobId ? 'Cancel' : 'Import'}</Button>
+                <Button type="button" variant="secondary" onClick={activeImportJobId ? cancelCompanionImport : importYoutube} tooltip={activeImportJobId ? 'Cancel local import' : 'Import YouTube audio locally'}>{activeImportJobId ? 'Cancel' : 'Import'}</Button>
               </div>
               <div className="import-card__divider"><span>or</span></div>
               <input ref={localAudioInputRef} type="file" accept="audio/mp4,audio/mpeg,audio/webm,audio/ogg,audio/wav" hidden onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void importLocalAudio(file); event.currentTarget.value = '' }} />
