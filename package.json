@@ -6,10 +6,11 @@
   "scripts": {
     "dev": "vite",
     "dev:server": "node server/index.js",
-    "dev:all": "concurrently \"npm run dev:server\" \"npm run dev\"",
+    "dev:companion": "node companion/index.js",
+    "dev:all": "concurrently \"npm run dev:server\" \"npm run dev:companion\" \"npm run dev\"",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "test": "node --test server/**/*.test.js",
+    "test": "node --test server/**/*.test.js companion/**/*.test.js && node --experimental-transform-types --test tests/**/*.test.mts",
     "preview": "vite preview"
   },
   "dependencies": {
