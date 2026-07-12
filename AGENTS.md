@@ -31,9 +31,8 @@ Projectiles should **hit the pad on the beat**. Do not schedule notes so project
 - React 19 + TypeScript + Vite
 - React Three Fiber / Drei / Three.js for the game view
 - shadcn/ui latest with the Base UI backend is the UI component direction. Use `npx shadcn@latest ... -b base ...` when adding or regenerating components. Do not use the Radix backend for this project.
-- Local Express server for YouTube import, cache, beatmap persistence
-- `yt-dlp`, `ffmpeg`, `ffprobe` are required for local importing
-- `fft-js` is used by the server for rough audio onset analysis
+- Local Express companion for audio import and cache
+- The companion provisions pinned `yt-dlp`, `ffmpeg`, and `ffprobe` builds on supported platforms
 
 Important files:
 
@@ -41,8 +40,8 @@ Important files:
 src/App.tsx          Main app, scene, tabs, gameplay state, editor UI
 src/App.css          Layout and UI styling
 src/game/timing.ts   Timing judgement logic
-server/index.js      Local import/cache/beatmap API
-public/imports/      Local imported song cache
+companion/           Local audio import/cache service
+src/storage/         Browser-owned song package persistence
 ```
 
 ## How to run
@@ -123,32 +122,11 @@ These cards should eventually be toggleable.
 
 ### Song import/cache
 
-`server/index.js` implements:
-
-- `GET /api/health`
-- `GET /api/imports`
-- `GET /api/imports/:songId/beatmaps`
-- `POST /api/import-youtube`
-- `POST /api/imports/:songId/beatmaps`
-
-Imports are cached by `sourceUrl` in `meta.json`. If the same YouTube URL is imported again, the server should return the cached import rather than downloading again.
+The loopback companion imports local files and YouTube audio, caches normalized playback files, and matches cached audio by source URL. It never owns beatmaps.
 
 ### Beatmap storage
 
-Each imported song can have multiple beatmaps:
-
-```txt
-public/imports/<songId>/
-  audio.mp3
-  meta.json
-  beatmap.json              legacy/current generated map
-  beatmaps/
-    auto-kick-snare.json
-    my-map.json
-    .history/
-```
-
-Saving a beatmap writes to `beatmaps/<id>.json`, increments `version`, and copies previous versions into `.history` when possible.
+Songs, timing profiles, and beatmaps are stored as browser-owned song packages. Package backups can be exported and imported from Config. Audio associations point to opaque companion audio IDs; audio bytes and local paths are never stored in portable packages.
 
 Beatmaps include metadata such as:
 

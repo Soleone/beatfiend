@@ -14,7 +14,7 @@ npm install
 npm run dev:companion
 ```
 
-The companion opens `http://localhost:5173` with a one-time pairing credential in the URL fragment. Beat Fiend consumes and removes that fragment. Start the full legacy-compatible development stack with `npm run dev:all`.
+The companion opens `http://localhost:5173` with a one-time pairing credential in the URL fragment. Beat Fiend consumes and removes that fragment. Start the app and companion together with `npm run dev:all`.
 
 ## Configuration
 

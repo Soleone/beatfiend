@@ -11,13 +11,4 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
-  server: {
-    watch: {
-      ignored: ['**/public/imports/**'],
-    },
-    proxy: {
-      '/api': 'http://localhost:5174',
-      '/imports': 'http://localhost:5174',
-    },
-  },
 })

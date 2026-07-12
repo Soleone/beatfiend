@@ -4,14 +4,12 @@ import './App.css'
 import { Badge, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Disclosure, DisclosureSummary, Field, FieldLabel, Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Slider, Stack, Tabs, TabsList, TabsTrigger } from './components/ui'
 import { Toolbar } from './components/Toolbar'
 import { CompanionClient, type CompanionAudio } from './companion/client'
-import { migrateLegacySongPackage, parseSongPackage, SONG_PACKAGE_SCHEMA, SONG_PACKAGE_VERSION, type SongPackage } from './domain/song-package'
+import { parseSongPackage, SONG_PACKAGE_SCHEMA, SONG_PACKAGE_VERSION, type SongPackage } from './domain/song-package'
 import { EditorTimeline } from './editor/EditorTimeline'
 import { HitNotify } from './game/HitNotify'
 import { judgeParryTiming, type ParryTimingResult } from './game/timing'
 import { createLocalStorageSongPackageRepository } from './storage/song-package-repository'
 import {
-  beatOffsetStorageKey,
-  bpmStorageKey,
   defaultControls,
   gamepadButtonLabels,
   initialTuning,
@@ -20,7 +18,6 @@ import {
   lanes,
   makeBeatmapAttack,
   normalizeBeatmap,
-  readStoredNumber,
   timelineLaneAreaHeightPx,
   timelineLaneTopPx,
   type Attack,
@@ -59,6 +56,7 @@ type BeatmapLibraryBackup = {
   packages: SongPackage[]
 }
 
+const LEGACY_RECOVERY_URL = '/legacy-song-packages.json'
 const editorSignature = (beatmap: Beatmap | null, title: string, difficulty: number, bpm: number, beatOffsetMs: number) => JSON.stringify({ beatmap, title, difficulty, bpm, beatOffsetMs })
 
 function downloadJson(value: unknown, filename: string) {
@@ -228,13 +226,6 @@ function App() {
     setFeedback(null)
   }, [resetScheduledNotes])
 
-  const fetchJson = useCallback(async (url: string, init?: RequestInit) => {
-    const response = await fetch(url, { cache: 'no-store', ...init, headers: { ...(init?.headers ?? {}) } })
-    const data = await response.json()
-    if (!response.ok) throw new Error(data.error ?? `Request failed ${response.status}`)
-    return data
-  }, [])
-
   const packageToImport = useCallback(async (songPackage: SongPackage): Promise<ImportResult> => {
     const maps = songPackage.beatmaps.map((map) => ({ id: map.id, title: map.title, difficulty: map.difficulty, updatedAt: map.updatedAt, noteCount: map.notes.length, url: `package:${songPackage.id}:${map.id}` }))
     const firstMap = maps[0]
@@ -243,20 +234,23 @@ function App() {
   }, [])
 
   const loadImports = useCallback(async () => {
-    const packageImports = (await packageRepository.list()).flatMap((summary) => {
-      const songPackagePromise = packageRepository.get(summary.id)
-      return [songPackagePromise]
-    })
+    const packageImports = (await packageRepository.list()).map((summary) => packageRepository.get(summary.id))
     const local = (await Promise.all(packageImports)).filter((item): item is SongPackage => item !== null)
-    const localImports = await Promise.all(local.map(packageToImport))
+    const localIds = new Set(local.map((item) => item.id))
+    let recoveryPackages: SongPackage[] = []
     try {
-      const data = await fetchJson('/api/imports')
-      const localIds = new Set(localImports.map((item) => item.id))
-      setSavedImports([...localImports, ...(data.imports ?? []).filter((item: ImportResult) => !localIds.has(item.id))])
+      const response = await fetch(LEGACY_RECOVERY_URL, { cache: 'no-store' })
+      if (response.ok) {
+        const backup = await response.json() as BeatmapLibraryBackup
+        recoveryPackages = backup.packages.map(parseSongPackage).filter((item) => !localIds.has(item.id))
+      }
     } catch {
-      setSavedImports(localImports)
+      // Recovery catalog is optional in deployments without legacy songs.
     }
-  }, [fetchJson, packageRepository, packageToImport])
+    const localImports = await Promise.all(local.map(packageToImport))
+    const recoveryImports = (await Promise.all(recoveryPackages.map(packageToImport))).map((item) => ({ ...item, beatmapUrl: `legacy:${item.id}`, beatmaps: item.beatmaps?.map((map) => ({ ...map, url: `legacy:${item.id}:${map.id}` })) }))
+    setSavedImports([...localImports, ...recoveryImports])
+  }, [packageRepository, packageToImport])
 
   const loadImport = useCallback(async (song: ImportResult) => {
     const loadSequence = ++audioLoadSequence.current
@@ -266,39 +260,47 @@ function App() {
     setSongBeatmaps(song.beatmaps ?? [])
     setImportStatus(`Loading ${song.title}...`)
     try {
-      let resolvedSong = song
-      let loadedBeatmap: Beatmap
-      if (song.beatmapUrl.startsWith('package:')) {
-        const songPackage = await packageRepository.get(song.id)
-        if (!songPackage) throw new Error('Song package not found')
-        resolvedSong = await packageToImport(songPackage)
-        const audioAssociation = await packageRepository.getAudioAssociation(songPackage.id)
-        if (!audioAssociation) throw new Error('This song no longer has an audio file attached')
-        if (!companion.paired) throw new Error('Start and pair the companion to load this song')
-        setImportStatus(`Copying ${song.title} into this browser session...`)
-        const audioBlob = await companion.downloadAudio(audioAssociation.audioId)
-        if (loadSequence !== audioLoadSequence.current) return
-        const nextAudioUrl = URL.createObjectURL(audioBlob)
-        const previousAudioUrl = browserAudioUrl.current
-        browserAudioUrl.current = nextAudioUrl
-        resolvedSong.audioUrl = nextAudioUrl
-        if (previousAudioUrl) URL.revokeObjectURL(previousAudioUrl)
-        const requestedMapId = song.beatmapUrl.split(':').at(-1)
-        const packageMap = songPackage.beatmaps.find((map) => map.id === requestedMapId) ?? songPackage.beatmaps[0]
-        if (!packageMap) throw new Error('Create a beatmap before loading this song')
-        const timing = songPackage.timingProfiles.find((profile) => profile.id === packageMap.timingProfileId) ?? songPackage.timingProfiles[0]
-        loadedBeatmap = { ...packageMap, songId: songPackage.id, bpm: timing?.bpm, beatOffsetMs: timing?.beatOffsetMs }
-      } else {
-        loadedBeatmap = await fetchJson(song.beatmapUrl)
-        const savedBeatmap = song.beatmaps?.find((map) => map.id === loadedBeatmap.id) ?? (song.beatmaps?.length === 1 ? song.beatmaps[0] : null)
-        if (savedBeatmap?.url && savedBeatmap.url !== song.beatmapUrl) loadedBeatmap = await fetchJson(savedBeatmap.url)
+      let songPackage = await packageRepository.get(song.id)
+      if (!songPackage && song.beatmapUrl.startsWith('legacy:')) {
+        setImportStatus(`Restoring ${song.title} into browser storage...`)
+        const response = await fetch(LEGACY_RECOVERY_URL, { cache: 'no-store' })
+        if (!response.ok) throw new Error('Legacy recovery catalog is unavailable')
+        const backup = await response.json() as BeatmapLibraryBackup
+        songPackage = backup.packages.map(parseSongPackage).find((item) => item.id === song.id) ?? null
+        if (!songPackage) throw new Error('Legacy song package was not found')
+        const sourceUrl = songPackage.song.sources.find((source) => source.url)?.url
+        if (!sourceUrl) throw new Error('Choose the original audio file to restore this song')
+        const matched = await companion.lookupSource(sourceUrl)
+        let audio = matched.audio
+        if (!audio) {
+          const job = await companion.startImport(sourceUrl)
+          const complete = job.state === 'complete' ? job : await companion.waitForImport(job.id, (progress) => setImportStatus(`Restoring ${song.title}: ${progress.progress}%`))
+          audio = complete.audio ?? null
+        }
+        if (!audio) throw new Error('Could not restore the song audio')
+        await packageRepository.put(songPackage)
+        await packageRepository.setAudioAssociation(songPackage.id, { audioId: audio.audioId, sourceUrl, updatedAt: new Date().toISOString() })
       }
+      if (!songPackage) throw new Error('Song package not found')
+      const resolvedSong = await packageToImport(songPackage)
+      const audioAssociation = await packageRepository.getAudioAssociation(songPackage.id)
+      if (!audioAssociation) throw new Error('This song no longer has an audio file attached')
+      if (!companion.paired) throw new Error('Start and pair the companion to load this song')
+      setImportStatus(`Copying ${song.title} into this browser session...`)
+      const audioBlob = await companion.downloadAudio(audioAssociation.audioId)
+      if (loadSequence !== audioLoadSequence.current) return
+      const nextAudioUrl = URL.createObjectURL(audioBlob)
+      const previousAudioUrl = browserAudioUrl.current
+      browserAudioUrl.current = nextAudioUrl
+      resolvedSong.audioUrl = nextAudioUrl
+      if (previousAudioUrl) URL.revokeObjectURL(previousAudioUrl)
+      const requestedMapId = song.beatmapUrl.split(':').at(-1)
+      const packageMap = songPackage.beatmaps.find((map) => map.id === requestedMapId) ?? songPackage.beatmaps[0]
+      if (!packageMap) throw new Error('Create a beatmap before loading this song')
+      const timing = songPackage.timingProfiles.find((profile) => profile.id === packageMap.timingProfileId) ?? songPackage.timingProfiles[0]
+      const loadedBeatmap: Beatmap = { ...packageMap, songId: songPackage.id, bpm: timing?.bpm, beatOffsetMs: timing?.beatOffsetMs }
       if (loadSequence !== audioLoadSequence.current) return
       setImportedSong(resolvedSong)
-      const savedSongBpm = readStoredNumber(bpmStorageKey(song.id))
-      const savedMapBpm = readStoredNumber(bpmStorageKey(song.id, loadedBeatmap.id))
-      const savedSongBeatOffset = readStoredNumber(beatOffsetStorageKey(song.id))
-      const savedMapBeatOffset = readStoredNumber(beatOffsetStorageKey(song.id, loadedBeatmap.id))
       resetEditorHistory()
       const normalizedBeatmap = normalizeBeatmap(loadedBeatmap)
       const loadedTitle = loadedBeatmap.title ?? song.title
@@ -306,13 +308,8 @@ function App() {
       setBeatmap(normalizedBeatmap)
       setMapTitle(loadedTitle)
       setDifficulty(loadedDifficulty)
-      const isBrowserPackage = song.beatmapUrl.startsWith('package:')
-      const nextBpm = isBrowserPackage
-        ? loadedBeatmap.bpm ?? 120
-        : savedMapBpm && savedMapBpm > 0 ? savedMapBpm : savedSongBpm && savedSongBpm > 0 ? savedSongBpm : song.bpm && song.bpm > 0 ? song.bpm : loadedBeatmap.bpm ?? 120
-      const nextBeatOffsetMs = isBrowserPackage
-        ? loadedBeatmap.beatOffsetMs ?? 0
-        : savedMapBeatOffset ?? savedSongBeatOffset ?? song.beatOffsetMs ?? loadedBeatmap.beatOffsetMs ?? 0
+      const nextBpm = loadedBeatmap.bpm ?? 120
+      const nextBeatOffsetMs = loadedBeatmap.beatOffsetMs ?? 0
       setBpm(nextBpm)
       setBeatOffsetMs(nextBeatOffsetMs)
       setSavedEditorSignature(editorSignature(normalizedBeatmap, loadedTitle, loadedDifficulty, nextBpm, nextBeatOffsetMs))
@@ -324,7 +321,7 @@ function App() {
     } catch (error) {
       setImportStatus(error instanceof Error ? error.message : 'Failed to load song')
     }
-  }, [companion, fetchJson, packageRepository, packageToImport, resetEditorHistory, resetGameplayPlayback])
+  }, [companion, packageRepository, packageToImport, resetEditorHistory, resetGameplayPlayback])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -373,20 +370,8 @@ function App() {
 
   useEffect(() => {
     if (!importedSong || !calibrationHydrated.current) return
-    localStorage.setItem(bpmStorageKey(importedSong.id) ?? '', String(bpm))
-    localStorage.setItem(beatOffsetStorageKey(importedSong.id) ?? '', String(beatOffsetMs))
-    if (beatmap?.id) {
-      localStorage.setItem(bpmStorageKey(importedSong.id, beatmap.id) ?? '', String(bpm))
-      localStorage.setItem(beatOffsetStorageKey(importedSong.id, beatmap.id) ?? '', String(beatOffsetMs))
-    }
     setBeatmap((current) => current && (current.bpm !== bpm || current.beatOffsetMs !== beatOffsetMs) ? { ...current, bpm, beatOffsetMs } : current)
-    const calibrationKey = `${importedSong.id}:${bpm}:${beatOffsetMs}`
-    if (persistedCalibration.current === calibrationKey) return
-    if (importedSong.beatmapUrl.startsWith('package:')) return
-    const timer = window.setTimeout(() => {
-      void fetch(`/api/imports/${importedSong.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ bpm, beatOffsetMs }) }).then(() => { persistedCalibration.current = calibrationKey }).catch(() => {})
-    }, 250)
-    return () => window.clearTimeout(timer)
+    persistedCalibration.current = `${importedSong.id}:${bpm}:${beatOffsetMs}`
   }, [beatOffsetMs, beatmap?.id, bpm, importedSong])
 
   const gridMs = useMemo(() => {
@@ -687,8 +672,7 @@ function App() {
       const id = saveAsNew ? `${titleToSave.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}-${Date.now().toString(36)}` : beatmap.id
       const editable = { ...beatmap, id, title: titleToSave, difficulty: difficultyToSave, bpm, beatOffsetMs, songId: importedSong.id, source: 'manual' }
       setImportStatus(`Saving ${titleToSave}...`)
-      if (importedSong.beatmapUrl.startsWith('package:')) {
-        const songPackage = await packageRepository.get(importedSong.id)
+      const songPackage = await packageRepository.get(importedSong.id)
         if (!songPackage) throw new Error('Song package not found')
         const now = new Date().toISOString()
         const currentProfileId = songPackage.beatmaps.find((map) => map.id === beatmap.id)?.timingProfileId ?? songPackage.defaultTimingProfileId
@@ -711,23 +695,10 @@ function App() {
         setSongBeatmaps(nextImport.beatmaps ?? [])
         setSavedImports((imports) => imports.map((song) => song.id === importedSong.id ? nextImport : song))
         setImportStatus(`Saved ${titleToSave} v${nextMap.version} in browser storage`)
-        return
-      }
-      const data = await fetchJson(`/api/imports/${importedSong.id}/beatmaps`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ beatmap: editable }) })
-      const savedBeatmap = normalizeBeatmap(data.beatmap)
-      setBeatmap(savedBeatmap)
-      setSavedEditorSignature(editorSignature(savedBeatmap, titleToSave, difficultyToSave, bpm, beatOffsetMs))
-      localStorage.setItem(bpmStorageKey(importedSong.id, data.beatmap.id) ?? '', String(bpm))
-      localStorage.setItem(bpmStorageKey(importedSong.id) ?? '', String(bpm))
-      localStorage.setItem(beatOffsetStorageKey(importedSong.id, data.beatmap.id) ?? '', String(beatOffsetMs))
-      localStorage.setItem(beatOffsetStorageKey(importedSong.id) ?? '', String(beatOffsetMs))
-      setSongBeatmaps(data.beatmaps ?? [])
-      setSavedImports((imports) => imports.map((song) => song.id === importedSong.id ? { ...song, beatmaps: data.beatmaps ?? song.beatmaps, noteCount: data.beatmap.notes?.length ?? song.noteCount, beatmapUrl: `/api/imports/${importedSong.id}/beatmaps/${data.beatmap.id}` } : song))
-      setImportStatus(`Saved ${data.beatmap.title} v${data.beatmap.version}`)
     } catch (error) {
       setImportStatus(error instanceof Error ? `Save failed: ${error.message}` : 'Save failed')
     }
-  }, [beatOffsetMs, beatmap, bpm, difficulty, fetchJson, importedSong, mapTitle, packageRepository, packageToImport])
+  }, [beatOffsetMs, beatmap, bpm, difficulty, importedSong, mapTitle, packageRepository, packageToImport])
 
   const loadBeatmap = useCallback(async (mapId: string) => {
     resetGameplayPlayback()
@@ -735,17 +706,12 @@ function App() {
     if (!map) return
     try {
       setImportStatus(`Loading ${map.title}...`)
-      let loaded: Beatmap
-      if (map.url.startsWith('package:')) {
-        const songPackage = await packageRepository.get(importedSong?.id ?? '')
-        const packageMap = songPackage?.beatmaps.find((item) => item.id === mapId)
-        if (!songPackage || !packageMap) throw new Error('Beatmap not found in browser storage')
-        const timing = songPackage.timingProfiles.find((profile) => profile.id === packageMap.timingProfileId) ?? songPackage.timingProfiles[0]
-        loaded = { ...packageMap, songId: songPackage.id, bpm: timing?.bpm, beatOffsetMs: timing?.beatOffsetMs }
-        setImportedSong((song) => song ? { ...song, beatmapUrl: map.url } : song)
-      } else {
-        loaded = await fetchJson(map.url)
-      }
+      const songPackage = await packageRepository.get(importedSong?.id ?? '')
+      const packageMap = songPackage?.beatmaps.find((item) => item.id === mapId)
+      if (!songPackage || !packageMap) throw new Error('Beatmap not found in browser storage')
+      const timing = songPackage.timingProfiles.find((profile) => profile.id === packageMap.timingProfileId) ?? songPackage.timingProfiles[0]
+      const loaded: Beatmap = { ...packageMap, songId: songPackage.id, bpm: timing?.bpm, beatOffsetMs: timing?.beatOffsetMs }
+      setImportedSong((song) => song ? { ...song, beatmapUrl: map.url } : song)
       resetEditorHistory()
       const normalizedBeatmap = normalizeBeatmap(loaded)
       const loadedDifficulty = loaded.difficulty ?? 1
@@ -753,12 +719,8 @@ function App() {
       setMapTitle(loaded.title)
       setDifficulty(loadedDifficulty)
       const songId = loaded.songId ?? importedSong?.id
-      const savedSongBpm = readStoredNumber(bpmStorageKey(songId))
-      const savedMapBpm = readStoredNumber(bpmStorageKey(songId, loaded.id))
-      const savedSongBeatOffset = readStoredNumber(beatOffsetStorageKey(songId))
-      const savedMapBeatOffset = readStoredNumber(beatOffsetStorageKey(songId, loaded.id))
-      const nextBpm = savedSongBpm && savedSongBpm > 0 ? savedSongBpm : importedSong?.bpm && importedSong.bpm > 0 ? importedSong.bpm : savedMapBpm && savedMapBpm > 0 ? savedMapBpm : loaded.bpm ?? 120
-      const nextBeatOffsetMs = savedSongBeatOffset ?? importedSong?.beatOffsetMs ?? savedMapBeatOffset ?? loaded.beatOffsetMs ?? 0
+      const nextBpm = loaded.bpm ?? 120
+      const nextBeatOffsetMs = loaded.beatOffsetMs ?? 0
       setBpm(nextBpm)
       setBeatOffsetMs(nextBeatOffsetMs)
       setSavedEditorSignature(editorSignature(normalizedBeatmap, loaded.title, loadedDifficulty, nextBpm, nextBeatOffsetMs))
@@ -768,7 +730,7 @@ function App() {
     } catch (error) {
       setImportStatus(error instanceof Error ? error.message : 'Failed to load beatmap')
     }
-  }, [fetchJson, importedSong, packageRepository, resetEditorHistory, resetGameplayPlayback, songBeatmaps])
+  }, [importedSong, packageRepository, resetEditorHistory, resetGameplayPlayback, songBeatmaps])
 
   const refreshSaveState = useCallback(async () => {
     await loadImports()
@@ -780,8 +742,7 @@ function App() {
     if (!beatmap || !importedSong) return
     const deletedTitle = mapTitle
     try {
-      if (importedSong.beatmapUrl.startsWith('package:')) {
-        const songPackage = await packageRepository.get(importedSong.id)
+      const songPackage = await packageRepository.get(importedSong.id)
         if (!songPackage) throw new Error('Song package not found')
         const now = new Date().toISOString()
         let maps = songPackage.beatmaps.filter((map) => map.id !== beatmap.id)
@@ -800,34 +761,10 @@ function App() {
         setDifficulty(next.difficulty)
         setDeleteOpen(false)
         setImportStatus(`Deleted ${deletedTitle}`)
-        return
-      }
-      const data = await fetchJson(`/api/imports/${importedSong.id}/beatmaps/${beatmap.id}`, { method: 'DELETE' })
-    const remaining = data.beatmaps ?? []
-    setSongBeatmaps(remaining)
-    setSavedImports((imports) => imports.map((song) => song.id === importedSong.id ? { ...song, beatmaps: remaining } : song))
-    setImportStatus(`Deleted ${deletedTitle}`)
-    setRecordedNotes([])
-    setDeleteOpen(false)
-    resetScheduledNotes()
-    if (remaining[0]) {
-      const next = await fetchJson(remaining[0].url)
-      const nextBeatmap = normalizeBeatmap(next)
-      const nextDifficulty = next.difficulty ?? 1
-      setBeatmap(nextBeatmap)
-      setSavedEditorSignature(editorSignature(nextBeatmap, next.title, nextDifficulty, bpm, beatOffsetMs))
-      setMapTitle(next.title)
-      setDifficulty(nextDifficulty)
-    } else {
-      const title = `${importedSong.title} custom`
-      setBeatmap({ id: `new-${Date.now().toString(36)}`, songId: importedSong.id, title, difficulty, bpm, beatOffsetMs, durationMs: importedSong.durationMs, notes: [] })
-      setSavedEditorSignature(null)
-      setMapTitle(title)
-    }
     } catch (error) {
       setImportStatus(error instanceof Error ? error.message : 'Delete failed')
     }
-  }, [beatOffsetMs, beatmap, bpm, difficulty, fetchJson, importedSong, mapTitle, packageRepository, packageToImport, resetScheduledNotes])
+  }, [beatOffsetMs, beatmap, bpm, importedSong, mapTitle, packageRepository, packageToImport])
 
   const createBlankBeatmap = useCallback(() => {
     if (!importedSong || !confirmDiscardChanges()) return
@@ -872,67 +809,6 @@ function App() {
     if (!beatmap) return
     downloadJson({ ...beatmap, title: mapTitle, difficulty, bpm, beatOffsetMs }, `${beatmap.id}-edited.beatmap.json`)
   }, [beatOffsetMs, beatmap, bpm, difficulty, mapTitle])
-
-  const migrateLegacyMaps = useCallback(async () => {
-    if (!companion.paired) {
-      setImportStatus('Start and pair the companion before migrating legacy maps.')
-      return
-    }
-    try {
-      setImportStatus('Scanning legacy maps...')
-      const data = await fetchJson('/api/imports')
-      const legacyImports = (data.imports ?? []) as ImportResult[]
-      const existingIds = new Set((await packageRepository.list()).map((item) => item.id))
-      const candidates = await Promise.all(legacyImports.filter((song) => !existingIds.has(song.id)).map(async (song) => {
-        const summaries = song.beatmaps ?? []
-        const maps = await Promise.all(summaries.map((map) => fetchJson(map.url)))
-        const customMaps = maps.filter((map) => {
-          const record = map as Record<string, unknown>
-          const id = typeof record.id === 'string' ? record.id.toLowerCase() : ''
-          return record.source !== 'auto' && id !== 'auto-kick-snare' && !id.startsWith('auto-')
-        })
-        return { song, customMaps, generatedCount: maps.length - customMaps.length }
-      }))
-      const migratable = candidates.filter((candidate) => candidate.customMaps.length > 0)
-      const mapCount = migratable.reduce((total, candidate) => total + candidate.customMaps.length, 0)
-      const generatedCount = candidates.reduce((total, candidate) => total + candidate.generatedCount, 0)
-      if (mapCount === 0) {
-        setImportStatus('No unmigrated custom maps were found.')
-        return
-      }
-      if (!window.confirm(`Migrate ${mapCount} custom map${mapCount === 1 ? '' : 's'} from ${migratable.length} legacy song${migratable.length === 1 ? '' : 's'}? ${generatedCount} generated map${generatedCount === 1 ? '' : 's'} will be excluded. Missing companion audio will be imported again from its source URL.`)) return
-
-      let migratedSongs = 0
-      let migratedMaps = 0
-      const failures: string[] = []
-      for (const { song, customMaps } of migratable) {
-        try {
-          if (!song.sourceUrl) throw new Error('no source URL is available to match companion audio')
-          const matched = await companion.lookupSource(song.sourceUrl)
-          let audio = matched.audio
-          if (!audio) {
-            const job = await companion.startImport(song.sourceUrl)
-            const complete = job.state === 'complete' ? job : await companion.waitForImport(job.id, (progress) => setImportStatus(`Preparing audio for ${song.title}: ${progress.progress}%`))
-            audio = complete.audio ?? null
-          }
-          if (!audio) throw new Error('companion audio could not be prepared')
-          const songPackage = migrateLegacySongPackage({ id: song.id, title: song.title, sourceUrl: song.sourceUrl, durationMs: song.durationMs, bpm: song.bpm, beatOffsetMs: song.beatOffsetMs, beatmaps: customMaps })
-          await packageRepository.put(songPackage)
-          await packageRepository.setAudioAssociation(songPackage.id, { audioId: audio.audioId, sourceUrl: song.sourceUrl, updatedAt: new Date().toISOString() })
-          migratedSongs += 1
-          migratedMaps += songPackage.beatmaps.length
-        } catch (error) {
-          failures.push(`${song.title}: ${error instanceof Error ? error.message : 'migration failed'}`)
-        }
-      }
-      await loadImports()
-      setImportStatus(failures.length > 0
-        ? `Migrated ${migratedMaps} maps from ${migratedSongs} songs. ${failures.length} failed: ${failures.join('; ')}`
-        : `Migrated ${migratedMaps} custom maps from ${migratedSongs} songs into browser storage.`)
-    } catch (error) {
-      setImportStatus(error instanceof Error ? `Legacy migration failed: ${error.message}` : 'Legacy migration failed')
-    }
-  }, [companion, fetchJson, loadImports, packageRepository])
 
   const exportLibrary = useCallback(async () => {
     try {
@@ -1412,7 +1288,7 @@ function App() {
               {importStatus && <p className={`import-status${importStatus.toLowerCase().includes('failed') ? ' import-status--error' : ''}`}>{importStatus}</p>}
             </CardContent>
           </Card>
-          <Card><CardHeader><CardTitle>Beatmap backups</CardTitle><CardDescription>Saved maps live in this browser. Export your library regularly to keep an independent backup.</CardDescription></CardHeader><Stack><Button type="button" variant="secondary" onClick={() => void exportLibrary()}><Download />Export library</Button><input ref={libraryImportInputRef} type="file" accept="application/json,.json" hidden onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void importLibrary(file); event.currentTarget.value = '' }} /><Button type="button" variant="secondary" onClick={() => libraryImportInputRef.current?.click()}>Import library</Button><Button type="button" variant="ghost" onClick={() => void migrateLegacyMaps()} disabled={!companion.paired}>Migrate legacy custom maps</Button></Stack></Card>
+          <Card><CardHeader><CardTitle>Beatmap backups</CardTitle><CardDescription>Saved maps live in this browser. Export your library regularly to keep an independent backup.</CardDescription></CardHeader><Stack><Button type="button" variant="secondary" onClick={() => void exportLibrary()}><Download />Export library</Button><input ref={libraryImportInputRef} type="file" accept="application/json,.json" hidden onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void importLibrary(file); event.currentTarget.value = '' }} /><Button type="button" variant="secondary" onClick={() => libraryImportInputRef.current?.click()}>Import library</Button></Stack></Card>
           <Card><CardHeader><CardTitle>Controls</CardTitle><CardDescription>Configure keyboard event codes and Xbox-style gamepad buttons for each lane.</CardDescription></CardHeader><div className="controls-grid">{lanes.map((lane) => <div key={lane} className="control-row"><strong style={{ color: laneColor[lane] }}>{lane}</strong><Input value={controls[lane].keyboard} onChange={(event) => setControls((current) => ({ ...current, [lane]: { ...current[lane], keyboard: event.target.value } }))} /><Select value={String(controls[lane].gamepadButton)} onValueChange={(button) => setControls((current) => ({ ...current, [lane]: { ...current[lane], gamepadButton: Number(button) } }))}><SelectTrigger className="ui-select"><SelectValue>{(button: string | null) => button === null ? 'Select button...' : gamepadButtonLabels[Number(button)]}</SelectValue></SelectTrigger><SelectContent>{Object.entries(gamepadButtonLabels).map(([button, label]) => <SelectItem key={button} value={button}>{label}</SelectItem>)}</SelectContent></Select></div>)}</div><Button type="button" variant="secondary" onClick={() => setControls(defaultControls)} tooltip="Restore default keyboard and gamepad bindings">Reset controls</Button></Card>
         </>}
 

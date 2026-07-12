@@ -5,12 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:server": "node server/index.js",
     "dev:companion": "node companion/index.js",
-    "dev:all": "concurrently \"npm run dev:server\" \"npm run dev:companion\" \"npm run dev\"",
+    "dev:all": "concurrently \"npm run dev:companion\" \"npm run dev\"",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "test": "node --test server/**/*.test.js companion/**/*.test.js && node --experimental-transform-types --test tests/**/*.test.mts",
+    "test": "node --test companion/**/*.test.js && node --experimental-transform-types --test tests/**/*.test.mts",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -22,7 +21,6 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "express": "^5.2.1",
-    "fft-js": "^0.0.12",
     "lucide-react": "^1.23.0",
     "nanoid": "^5.1.16",
     "react": "^19.2.7",
@@ -34,7 +32,6 @@
     "tw-animate-css": "^1.4.0"
   },
   "devDependencies": {
-    "@types/express": "^5.0.6",
     "@types/node": "^24.13.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",

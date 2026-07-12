@@ -40,7 +40,6 @@ No system installation of yt-dlp, FFmpeg, or ffprobe is required on Linux x64 or
 The development command starts:
 
 - Beat Fiend on `http://localhost:5173`
-- The legacy import/save server on `http://localhost:5174`
 - The local audio companion on `http://127.0.0.1:47831`
 
 ## Local YouTube import

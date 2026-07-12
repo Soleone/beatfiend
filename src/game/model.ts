@@ -53,18 +53,6 @@ export const timelineLaneHeightPx = 58
 export const timelineLaneTopPx = timelineRulerHeightPx
 export const timelineLaneAreaHeightPx = lanes.length * timelineLaneHeightPx
 
-export const bpmStorageKey = (songId?: string, beatmapId?: string) => songId ? `beat-fiend:bpm:${songId}:${beatmapId ?? 'song'}` : null
-export const beatOffsetStorageKey = (songId?: string, beatmapId?: string) => songId ? `beat-fiend:beat-offset:${songId}:${beatmapId ?? 'song'}` : null
-
-export const readStoredNumber = (key: string | null) => {
-  if (!key) return null
-  const legacyKey = key.replace(/^beat-fiend:/, 'flow-fight:')
-  const stored = localStorage.getItem(key) ?? localStorage.getItem(legacyKey)
-  if (stored === null) return null
-  const value = Number(stored)
-  return Number.isFinite(value) ? value : null
-}
-
 export function normalizeLane(lane: unknown): Lane {
   if (lane === 'left') return 'low'
   if (lane === 'up' || lane === 'down') return 'mid'
