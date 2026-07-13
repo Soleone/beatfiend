@@ -317,9 +317,29 @@ function App() {
         await packageRepository.setAudioAssociation(songPackage.id, audioAssociation)
       }
       setImportStatus(`Copying ${song.title} into this browser session...`)
-      const audioBlob = audioAssociation.storage === 'browser'
-        ? await getBrowserAudio(audioAssociation.audioId)
-        : companion.paired ? await companion.downloadAudio(audioAssociation.audioId) : null
+      let audioBlob: Blob | null = null
+      if (audioAssociation.storage === 'browser') {
+        audioBlob = await getBrowserAudio(audioAssociation.audioId)
+      } else if (companion.paired) {
+        try {
+          audioBlob = await companion.downloadAudio(audioAssociation.audioId)
+        } catch {
+          const sourceUrl = audioAssociation.sourceUrl ?? songPackage.song.sources.find((source) => source.url)?.url
+          if (!sourceUrl) throw new Error('Audio is no longer available locally and this song has no downloadable source')
+          setImportStatus(`Restoring ${song.title} from its source...`)
+          const matched = await companion.lookupSource(sourceUrl)
+          let audio = matched.audio
+          if (!audio) {
+            const job = await companion.startImport(sourceUrl)
+            const complete = job.state === 'complete' ? job : await companion.waitForImport(job.id, (progress) => setImportStatus(`Restoring ${song.title}: ${progress.progress}%`))
+            audio = complete.audio ?? null
+          }
+          if (!audio) throw new Error('Could not restore the song audio')
+          audioAssociation = { audioId: audio.audioId, storage: 'companion', sourceUrl, updatedAt: new Date().toISOString() }
+          await packageRepository.setAudioAssociation(songPackage.id, audioAssociation)
+          audioBlob = await companion.downloadAudio(audio.audioId)
+        }
+      }
       if (!audioBlob) throw new Error(audioAssociation.storage === 'browser' ? 'Choose the original audio file to restore this song' : 'Start and pair the companion to load this song')
       if (loadSequence !== audioLoadSequence.current) return
       const nextAudioUrl = URL.createObjectURL(audioBlob)
