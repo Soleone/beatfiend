@@ -14,17 +14,17 @@ npm install
 npm run dev:companion
 ```
 
-The companion opens `http://localhost:5173` with a one-time pairing credential in the URL fragment. Beat Fiend consumes and removes that fragment. Start the app and companion together with `npm run dev:all`.
+The companion opens the hosted Beat Fiend app with a one-time pairing credential in the URL fragment. Beat Fiend consumes and removes that fragment. Developers can point it at Vite with `BEAT_FIEND_WEB_URL=http://localhost:5173 npm run dev:all`.
 
 ## Configuration
 
-- `BEAT_FIEND_WEB_URL`: web app URL opened for pairing, default `http://localhost:5173/`
-- `BEAT_FIEND_ALLOWED_ORIGINS`: comma-separated exact browser origins
+- `BEAT_FIEND_WEB_URL`: optional override for the app URL opened for pairing and automatically allowed as an exact origin. The default is centralized in `companion/config.js`.
+- `BEAT_FIEND_ALLOWED_ORIGINS`: optional comma-separated additional exact browser origins
 - `BEAT_FIEND_COMPANION_PORT`: loopback port, default `47831`
 - `BEAT_FIEND_COMPANION_DATA_DIR`: private cache and secret directory
 - `BEAT_FIEND_YT_DLP`, `BEAT_FIEND_FFMPEG`, `BEAT_FIEND_FFPROBE`: trusted command paths
 
-Production must set the exact hosted HTTPS origin. Do not use wildcard origins or bind the server to a public interface.
+The packaged companion should use the centralized hosted default without requiring environment variables or command-line setup. Do not use wildcard origins or bind the server to a public interface.
 
 ## Maintenance
 

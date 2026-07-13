@@ -49,6 +49,7 @@ export async function createCompanionApp(options = {}) {
       res.set('Vary', 'Origin')
       res.set('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-Beat-Fiend-Filename')
       res.set('Access-Control-Allow-Methods', 'GET, HEAD, POST, DELETE, OPTIONS')
+      if (req.headers['access-control-request-private-network'] === 'true') res.set('Access-Control-Allow-Private-Network', 'true')
     }
     if (req.method === 'OPTIONS') return res.status(204).end()
     next()

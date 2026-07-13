@@ -15,6 +15,7 @@ export type SongPackageSummary = {
 
 export type AudioAssociation = {
   audioId: string
+  storage?: 'companion' | 'browser'
   sourceUrl?: string
   updatedAt: string
 }

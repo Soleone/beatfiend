@@ -3,6 +3,7 @@ import { rm } from 'node:fs/promises'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
+import { BEAT_FIEND_WEB_URL } from './config.js'
 import { createCompanionApp, DEFAULT_PORT } from './server.js'
 import { provisionCompanionTools } from './tools.js'
 
@@ -35,8 +36,11 @@ export async function startCompanion(env = process.env, argv = process.argv.slic
   }
   const port = Number(env.BEAT_FIEND_COMPANION_PORT ?? DEFAULT_PORT)
   if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('Invalid companion port')
-  const webUrl = env.BEAT_FIEND_WEB_URL ?? 'http://localhost:5173/'
-  const allowedOrigins = (env.BEAT_FIEND_ALLOWED_ORIGINS ?? 'http://localhost:5173,http://127.0.0.1:5173').split(',').map((value) => value.trim()).filter(Boolean)
+  const webUrl = env.BEAT_FIEND_WEB_URL ?? BEAT_FIEND_WEB_URL
+  const allowedOrigins = [...new Set([
+    new URL(webUrl).origin,
+    ...(env.BEAT_FIEND_ALLOWED_ORIGINS ?? 'http://localhost:5173,http://127.0.0.1:5173').split(',').map((value) => value.trim()).filter(Boolean),
+  ])]
   console.log('Checking pinned media tools...')
   const tools = await provisionCompanionTools({ dataDir, env })
   const { app, secret } = await createCompanionApp({ port, dataDir, allowedOrigins, webUrl, tools })

@@ -13,6 +13,7 @@ import { HitNotify } from './game/HitNotify'
 import { findDueNotes } from './game/note-scheduler'
 import { judgeParryTiming, type ParryTimingResult } from './game/timing'
 import { runtimeMetrics, type RuntimeMetricsSnapshot } from './performance/runtime-metrics'
+import { getBrowserAudio, putBrowserAudio } from './storage/browser-audio-repository'
 import { createLocalStorageSongPackageRepository } from './storage/song-package-repository'
 import {
   defaultControls,
@@ -314,9 +315,11 @@ function App() {
         audioAssociation = { audioId: audio.audioId, sourceUrl, updatedAt: new Date().toISOString() }
         await packageRepository.setAudioAssociation(songPackage.id, audioAssociation)
       }
-      if (!companion.paired) throw new Error('Start and pair the companion to load this song')
       setImportStatus(`Copying ${song.title} into this browser session...`)
-      const audioBlob = await companion.downloadAudio(audioAssociation.audioId)
+      const audioBlob = audioAssociation.storage === 'browser'
+        ? await getBrowserAudio(audioAssociation.audioId)
+        : companion.paired ? await companion.downloadAudio(audioAssociation.audioId) : null
+      if (!audioBlob) throw new Error(audioAssociation.storage === 'browser' ? 'Choose the original audio file to restore this song' : 'Start and pair the companion to load this song')
       if (loadSequence !== audioLoadSequence.current) return
       const nextAudioUrl = URL.createObjectURL(audioBlob)
       const previousAudioUrl = browserAudioUrl.current
@@ -597,7 +600,7 @@ function App() {
     return () => window.clearInterval(timer)
   }, [activeTab, beatmap, importedSong, isSongPlaying, loopMarkers, tuning.parryWindowMs, tuning.telegraphMs])
 
-  const createPackageForAudio = useCallback(async (audio: CompanionAudio, sourceUrl?: string) => {
+  const createPackageForAudio = useCallback(async (audio: CompanionAudio, sourceUrl?: string, browserAudio?: Blob) => {
     const id = crypto.randomUUID()
     const now = new Date().toISOString()
     const mapId = 'custom-1'
@@ -612,8 +615,9 @@ function App() {
       createdAt: now,
       updatedAt: now,
     }
+    if (browserAudio) await putBrowserAudio(audio.audioId, browserAudio)
     await packageRepository.put(songPackage)
-    await packageRepository.setAudioAssociation(id, { audioId: audio.audioId, ...(sourceUrl ? { sourceUrl } : {}), updatedAt: now })
+    await packageRepository.setAudioAssociation(id, { audioId: audio.audioId, storage: browserAudio ? 'browser' : 'companion', ...(sourceUrl ? { sourceUrl } : {}), updatedAt: now })
     const imported = await packageToImport(songPackage)
     await loadImport(imported)
     await loadImports()
@@ -646,11 +650,23 @@ function App() {
   }, [activeImportJobId, companion])
 
   const importLocalAudio = useCallback(async (file: File) => {
-    if (!companion.paired) { setImportStatus('Start Beat Fiend Companion to pair this browser first.'); return }
-    setImportStatus('Copying audio into the local companion...')
+    setImportStatus(companion.paired ? 'Copying audio into the local companion...' : 'Saving audio in this browser...')
     try {
-      const { audio } = await companion.uploadFile(file)
-      await createPackageForAudio(audio)
+      if (companion.paired) {
+        const { audio } = await companion.uploadFile(file)
+        await createPackageForAudio(audio)
+      } else {
+        const objectUrl = URL.createObjectURL(file)
+        const durationMs = await new Promise<number>((resolve, reject) => {
+          const audioElement = new Audio()
+          audioElement.preload = 'metadata'
+          audioElement.onloadedmetadata = () => resolve(Number.isFinite(audioElement.duration) ? audioElement.duration * 1000 : 0)
+          audioElement.onerror = () => reject(new Error('The browser could not read this audio file'))
+          audioElement.src = objectUrl
+        }).finally(() => URL.revokeObjectURL(objectUrl))
+        const audio: CompanionAudio = { audioId: crypto.randomUUID(), title: file.name, durationMs, contentType: file.type || 'application/octet-stream', size: file.size }
+        await createPackageForAudio(audio, undefined, file)
+      }
       setImportStatus('Local audio attached. Add timing and custom notes in the editor.')
     } catch (error) { setImportStatus(error instanceof Error ? error.message : 'Local file import failed') }
   }, [companion, createPackageForAudio])
@@ -1357,7 +1373,7 @@ function App() {
         </>}
 
         {activeTab === 'config' && <>
-          <ConfigSection className="import-card" icon={<Headphones />} title="Local audio companion" description="Import audio on this computer. Beatmaps remain in browser storage." status={<Badge tone={companionStatus === 'paired' ? 'success' : companionStatus === 'available' ? 'warning' : companionStatus === 'offline' ? 'danger' : 'muted'}>{companionStatus}</Badge>}>
+          <ConfigSection className="import-card" icon={<Headphones />} title="Import audio" description="Choose a file in any browser. The companion additionally enables YouTube imports and local caching." status={<Badge tone={companionStatus === 'paired' ? 'success' : companionStatus === 'available' ? 'warning' : companionStatus === 'offline' ? 'danger' : 'muted'}>{companionStatus}</Badge>}>
             <div className="import-card__content">
               <div className="url-row">
                 <Input type="url" aria-label="YouTube URL" placeholder="Paste a YouTube URL" value={youtubeUrl} onChange={(event) => setYoutubeUrl(event.target.value)} />
@@ -1365,7 +1381,7 @@ function App() {
               </div>
               <div className="import-card__divider"><span>or</span></div>
               <input ref={localAudioInputRef} type="file" accept="audio/mp4,audio/mpeg,audio/webm,audio/ogg,audio/wav" hidden onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void importLocalAudio(file); event.currentTarget.value = '' }} />
-              <Button className="import-card__file-button" type="button" variant="secondary" onClick={() => localAudioInputRef.current?.click()} disabled={!companion.paired}>Choose an audio file</Button>
+              <Button className="import-card__file-button" type="button" variant="secondary" onClick={() => localAudioInputRef.current?.click()}>Choose an audio file</Button>
               {importStatus && <p className={`import-status${importStatus.toLowerCase().includes('failed') ? ' import-status--error' : ''}`}>{importStatus}</p>}
             </div>
           </ConfigSection>
