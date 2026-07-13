@@ -49,8 +49,8 @@ test('uses explicit overrides while provisioning missing companion tools', async
   try {
     const tools = await provisionCompanionTools({ dataDir, platform: 'linux', arch: 'x64', env: { BEAT_FIEND_YT_DLP: '/trusted/yt-dlp' }, fetchImpl: async () => response, manifest })
     assert.equal(tools.ytDlp, '/trusted/yt-dlp')
-    assert.match(tools.ffmpeg, /tools\/test-1\/ffmpeg$/)
-    assert.match(tools.ffprobe, /tools\/test-1\/ffprobe$/)
+    assert.equal(tools.ffmpeg, path.join(dataDir, 'tools', 'test-1', 'ffmpeg'))
+    assert.equal(tools.ffprobe, path.join(dataDir, 'tools', 'test-1', 'ffprobe'))
   } finally { await rm(dataDir, { recursive: true, force: true }) }
 })
 
