@@ -7,7 +7,7 @@ The Windows companion is a per-user, one-click NSIS installer. It embeds Electro
 1. Download `Beat-Fiend-Companion-Setup.exe` from the Beat Fiend Config screen or GitHub Releases.
 2. Run the installer. It installs without administrator access and launches the companion.
 3. The companion provisions verified media tools, starts on `127.0.0.1:47831`, and opens `https://beatfiend.vercel.app` with pairing data in the URL fragment.
-4. Closing the status window keeps the tray process running. The companion does not start at login. Use the tray menu to reopen Beat Fiend, pair another browser, view status, or quit.
+4. Keep the companion window open while using YouTube import. Closing the window quits the companion and its local service completely. It does not run in the notification area or start at login.
 5. Updates download automatically from GitHub Releases. The status window prompts before restarting to install them.
 
 Uninstall from Windows Settings under Apps. Browser-owned songs and beatmaps remain in the browser. Companion cache data remains in `%LOCALAPPDATA%\Beat Fiend Companion` unless the user removes it manually.

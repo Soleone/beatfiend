@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell, Tray } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import electronUpdater from 'electron-updater'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -11,13 +11,11 @@ const directory = path.dirname(fileURLToPath(import.meta.url))
 const pairingUrl = `http://127.0.0.1:${DEFAULT_PORT}/v1/pair`
 let companionServer = null
 let mainWindow = null
-let tray = null
 let status = { state: 'starting', message: 'Preparing the local audio tools...' }
 
 function publishStatus(next) {
   status = { ...status, ...next }
   mainWindow?.webContents.send('companion-status', status)
-  tray?.setToolTip(`Beat Fiend Companion: ${status.state}`)
 }
 
 function openBeatFiend(pair = false) {
@@ -42,27 +40,8 @@ function createWindow() {
   })
   mainWindow.loadFile(path.join(directory, 'status.html'))
   mainWindow.once('ready-to-show', () => mainWindow?.show())
-  mainWindow.on('close', (event) => {
-    if (app.isQuitting) return
-    event.preventDefault()
-    mainWindow?.hide()
-  })
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   mainWindow.webContents.on('will-navigate', (event) => event.preventDefault())
-}
-
-function createTray() {
-  const icon = nativeImage.createFromPath(path.join(directory, 'icon.png'))
-  tray = new Tray(icon)
-  tray.setToolTip('Beat Fiend Companion')
-  tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Open Beat Fiend', click: () => openBeatFiend(false) },
-    { label: 'Pair this browser', click: () => openBeatFiend(true) },
-    { label: 'Companion status', click: () => mainWindow?.show() },
-    { type: 'separator' },
-    { label: 'Quit', click: () => { app.isQuitting = true; app.quit() } },
-  ]))
-  tray.on('double-click', () => mainWindow?.show())
 }
 
 function configureUpdater() {
@@ -88,7 +67,6 @@ else {
   app.on('second-instance', () => { mainWindow?.show(); mainWindow?.focus() })
   app.whenReady().then(async () => {
     createWindow()
-    createTray()
     configureUpdater()
     try {
       companionServer = await startCompanion(process.env, ['--no-open'])
@@ -107,4 +85,4 @@ app.on('before-quit', () => {
   app.isQuitting = true
   companionServer?.close()
 })
-app.on('window-all-closed', () => {})
+app.on('window-all-closed', () => app.quit())
