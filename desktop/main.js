@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { DEFAULT_PORT } from '../companion/server.js'
 import { startCompanion } from '../companion/index.js'
 import { BEAT_FIEND_WEB_URL } from '../companion/config.js'
+import { formatUpdateError } from './update-errors.js'
 
 const { autoUpdater } = electronUpdater
 const directory = path.dirname(fileURLToPath(import.meta.url))
@@ -52,7 +53,7 @@ function configureUpdater() {
   autoUpdater.on('update-available', ({ version }) => publishStatus({ update: `Downloading version ${version}...` }))
   autoUpdater.on('download-progress', ({ percent }) => publishStatus({ update: `Downloading update: ${Math.round(percent)}%` }))
   autoUpdater.on('update-downloaded', ({ version }) => publishStatus({ update: `Version ${version} is ready to install.`, updateReady: true }))
-  autoUpdater.on('error', (error) => publishStatus({ update: `Update check failed: ${error.message}` }))
+  autoUpdater.on('error', (error) => publishStatus({ update: formatUpdateError(error) }))
 }
 
 ipcMain.handle('get-status', () => status)
