@@ -11,10 +11,10 @@ Requirements:
 
 ```bash
 npm install
-npm run dev:companion
+npm run dev:all
 ```
 
-The companion opens the hosted Beat Fiend app with a one-time pairing credential in the URL fragment. Beat Fiend consumes and removes that fragment. Developers can point it at Vite with `BEAT_FIEND_WEB_URL=http://localhost:5173 npm run dev:all`.
+This starts Vite and the companion together at `http://localhost:5173`. Running `npm run dev:companion` separately also targets the local Vite app. The companion uses a one-time pairing credential in the URL fragment, which Beat Fiend consumes and removes. Packaged builds continue to open the hosted app.
 
 ## Configuration
 

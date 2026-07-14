@@ -380,24 +380,41 @@ function App() {
   }, [companion, packageRepository, packageToImport, resetEditorHistory, resetGameplayPlayback])
 
   useEffect(() => {
-    const controller = new AbortController()
-    const timeout = window.setTimeout(() => controller.abort(), 800)
-    companion.status(controller.signal)
-      .then(() => {
-        if (companion.paired) {
-          sessionStorage.removeItem('beat-fiend:companion:auto-pair-attempted')
-          setCompanionStatus('paired')
-          return
-        }
-        setCompanionStatus('available')
-        if (!sessionStorage.getItem('beat-fiend:companion:auto-pair-attempted')) {
-          sessionStorage.setItem('beat-fiend:companion:auto-pair-attempted', '1')
-          companion.pair()
-        }
-      })
-      .catch(() => setCompanionStatus('offline'))
-      .finally(() => window.clearTimeout(timeout))
-    return () => { controller.abort(); window.clearTimeout(timeout) }
+    let stopped = false
+    let retryTimer = 0
+    let requestController: AbortController | null = null
+
+    const checkCompanion = () => {
+      requestController = new AbortController()
+      const timeout = window.setTimeout(() => requestController?.abort(), 800)
+      companion.status(requestController.signal)
+        .then(() => {
+          if (stopped) return
+          if (companion.paired) {
+            sessionStorage.removeItem('beat-fiend:companion:auto-pair-attempted')
+            setCompanionStatus('paired')
+            return
+          }
+          setCompanionStatus('available')
+          if (!sessionStorage.getItem('beat-fiend:companion:auto-pair-attempted')) {
+            sessionStorage.setItem('beat-fiend:companion:auto-pair-attempted', '1')
+            companion.pair()
+          }
+        })
+        .catch(() => {
+          if (stopped) return
+          setCompanionStatus('offline')
+          retryTimer = window.setTimeout(checkCompanion, 1500)
+        })
+        .finally(() => window.clearTimeout(timeout))
+    }
+
+    checkCompanion()
+    return () => {
+      stopped = true
+      requestController?.abort()
+      window.clearTimeout(retryTimer)
+    }
   }, [companion])
 
   useEffect(() => { void loadImports() }, [loadImports])

@@ -4,9 +4,9 @@
   "version": "0.1.8",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "dev:companion": "node companion/index.js",
-    "dev:all": "cross-env BEAT_FIEND_WEB_URL=http://localhost:5173 concurrently \"npm run dev:companion\" \"npm run dev\"",
+    "dev": "vite --strictPort",
+    "dev:companion": "cross-env BEAT_FIEND_WEB_URL=http://localhost:5173 node companion/index.js",
+    "dev:all": "concurrently \"npm run dev:companion\" \"npm run dev\"",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "test": "node --test companion/**/*.test.js desktop/**/*.test.js && node --experimental-transform-types --test tests/**/*.test.mts",
