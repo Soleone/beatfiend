@@ -3,6 +3,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type
 import './App.css'
 import { Badge, Button, Card, CardDescription, CardHeader, CardTitle, Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, Disclosure, DisclosureSummary, Field, FieldLabel, Input, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Slider, Stack, Tabs, TabsList, TabsTrigger } from './components/ui'
 import { ConfigSection } from './components/ConfigSection'
+import { PerformanceHistoryTransfer } from './components/PerformanceHistoryTransfer'
 import { Toolbar } from './components/Toolbar'
 import { CompanionClient, type CompanionAudio } from './companion/client'
 import { COMPANION_WINDOWS_DOWNLOAD_URL } from './config'
@@ -19,6 +20,7 @@ import { judgeParryTiming, syncopationAmount, type ParryTimingResult } from './g
 import { usePlayRunHistory } from './game/use-play-run-history'
 import { runtimeMetrics, type RuntimeMetricsSnapshot } from './performance/runtime-metrics'
 import { getBrowserAudio, putBrowserAudio } from './storage/browser-audio-repository'
+import { createIndexedDbRunHistoryRepository } from './storage/run-history-repository'
 import { createLocalStorageSongPackageRepository } from './storage/song-package-repository'
 import {
   collectionPercent,
@@ -161,6 +163,7 @@ function App() {
   const [savedEditorSignature, setSavedEditorSignature] = useState<string | null>(null)
   const companion = useMemo(() => new CompanionClient(), [])
   const packageRepository = useMemo(() => createLocalStorageSongPackageRepository(), [])
+  const runHistoryRepository = useMemo(() => createIndexedDbRunHistoryRepository(), [])
   const scheduledNoteIds = useRef(new Set<string>())
   const shiftWheelSelection = useRef<{ anchorTimeMs: number; baselineIds: Set<string> } | null>(null)
   const loopCycle = useRef(0)
@@ -184,13 +187,17 @@ function App() {
   const laneNoteTotals = useMemo(() => countNotesByLane(beatmap?.notes ?? []), [beatmap?.notes])
   const collectionProgress = useMemo(() => Object.fromEntries(lanes.map((lane) => [lane, collectionPercent(collectedNotes[lane], laneNoteTotals[lane])])) as Record<Lane, number>, [collectedNotes, laneNoteTotals])
   const {
+    runs: playRuns,
     lastRun: lastPlayRun,
     lastRunNoteResults,
     lastRunCounts,
     beginRun: beginPlayRun,
     finishRun: finishPlayRun,
+    storageError: runHistoryStorageError,
     recordJudgements: recordRunJudgements,
-  } = usePlayRunHistory({ songId: importedSong?.id, beatmap, bpm, beatOffsetMs })
+    snapshotRuns: snapshotPlayRuns,
+    importRuns: importPlayRuns,
+  } = usePlayRunHistory({ songId: importedSong?.id, beatmap, bpm, beatOffsetMs, repository: runHistoryRepository })
 
   useEffect(() => {
     setCollectedNotes(createLaneCounts())
@@ -1565,6 +1572,7 @@ function App() {
               {importStatus && <p className={`import-status${importStatus.toLowerCase().includes('failed') ? ' import-status--error' : ''}`}>{importStatus}</p>}
             </div>
           </ConfigSection>
+          <PerformanceHistoryTransfer runs={playRuns} storageError={runHistoryStorageError} snapshotRuns={snapshotPlayRuns} importRuns={importPlayRuns} />
           <ConfigSection className="library-transfer-card" icon={<Database />} title="Library transfer" description="Back up your collection or move it to another browser.">
             <div className="library-transfer-card__details"><Badge tone="muted">Metadata only</Badge><span className="library-transfer-card__detail-copy">Includes songs, YouTube links, BPM, beat 1, and every beatmap. Audio downloads locally when needed.</span></div>
             <div className="library-transfer-card__actions">

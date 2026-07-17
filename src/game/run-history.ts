@@ -1,9 +1,17 @@
-import type { Lane } from './model'
+import type { BeatmapNote, Lane } from './model'
 import type { ParryGrade } from './timing'
+
+export type RunNoteSnapshot = {
+  impactTimeMs: number
+  lane: Lane
+  durationMs?: number
+}
 
 export type RunNoteJudgement = {
   id: string
   noteId: string
+  noteRevisionKey: string
+  noteSnapshot: RunNoteSnapshot
   occurrenceKey: string
   lane: Lane
   noteTimeMs: number
@@ -25,11 +33,28 @@ export type PlayRun = {
 
 export type RunNoteSummary = {
   noteId: string
+  noteRevisionKey: string
+  noteSnapshot: RunNoteSnapshot
   occurrenceKey: string
   lane: Lane
   noteTimeMs: number
   grade: ParryGrade
   deltaMs: number | null
+}
+
+const normalizeRevisionTime = (timeMs: number) => Math.round(timeMs * 1000) / 1000
+
+export function createRunNoteSnapshot(note: Pick<BeatmapNote, 'impactTimeMs' | 'lane' | 'durationMs'>): RunNoteSnapshot {
+  return {
+    impactTimeMs: normalizeRevisionTime(note.impactTimeMs),
+    lane: note.lane,
+    ...(note.durationMs === undefined ? {} : { durationMs: normalizeRevisionTime(note.durationMs) }),
+  }
+}
+
+export function createNoteRevisionKey(note: Pick<BeatmapNote, 'impactTimeMs' | 'lane' | 'durationMs'>) {
+  const snapshot = createRunNoteSnapshot(note)
+  return `note-v1:${snapshot.lane}:${snapshot.impactTimeMs}:${snapshot.durationMs ?? 'tap'}`
 }
 
 export function createPlayRun({
@@ -60,6 +85,8 @@ export function summarizeRunNotes(run: PlayRun | null | undefined) {
       : judgement.deltaMs
     summariesByOccurrence.set(judgement.occurrenceKey, {
       noteId: judgement.noteId,
+      noteRevisionKey: judgement.noteRevisionKey,
+      noteSnapshot: judgement.noteSnapshot,
       occurrenceKey: judgement.occurrenceKey,
       lane: judgement.lane,
       noteTimeMs: judgement.noteTimeMs,
@@ -71,6 +98,11 @@ export function summarizeRunNotes(run: PlayRun | null | undefined) {
   const summariesByNote = new Map<string, RunNoteSummary>()
   for (const summary of summariesByOccurrence.values()) summariesByNote.set(summary.noteId, summary)
   return summariesByNote
+}
+
+export function filterCurrentNoteRevisions(summaries: ReadonlyMap<string, RunNoteSummary>, notes: Array<Pick<BeatmapNote, 'id' | 'impactTimeMs' | 'lane' | 'durationMs'>>) {
+  const currentRevisionKeys = new Map(notes.map((note) => [note.id, createNoteRevisionKey(note)]))
+  return new Map([...summaries].filter(([noteId, summary]) => currentRevisionKeys.get(noteId) === summary.noteRevisionKey))
 }
 
 export function describeRunNoteSummary(summary: RunNoteSummary) {

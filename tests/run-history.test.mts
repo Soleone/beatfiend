@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { createPlayRun, describeRunNoteSummary, summarizeRunNotes, type PlayRun, type RunNoteJudgement } from '../src/game/run-history.ts'
+import { createNoteRevisionKey, createPlayRun, describeRunNoteSummary, filterCurrentNoteRevisions, summarizeRunNotes, type PlayRun, type RunNoteJudgement, type RunNoteSummary } from '../src/game/run-history.ts'
 
 const baseRun = createPlayRun({
   id: 'run-1',
@@ -15,6 +15,8 @@ function judgement(overrides: Partial<RunNoteJudgement>): RunNoteJudgement {
   return {
     id: 'judgement-1',
     noteId: 'note-1',
+    noteRevisionKey: 'note-v1:kick:1000:tap',
+    noteSnapshot: { impactTimeMs: 1000, lane: 'kick' },
     occurrenceKey: 'note-1',
     lane: 'kick',
     noteTimeMs: 1000,
@@ -42,6 +44,8 @@ test('summarizes the latest loop occurrence for each beatmap note', () => {
   ]))
   assert.deepEqual(summaries.get('note-1'), {
     noteId: 'note-1',
+    noteRevisionKey: 'note-v1:kick:1000:tap',
+    noteSnapshot: { impactTimeMs: 1000, lane: 'kick' },
     occurrenceKey: 'note-1:1',
     lane: 'kick',
     noteTimeMs: 1000,
@@ -66,7 +70,46 @@ test('distinguishes an automatic miss with no input', () => {
   assert.equal(describeRunNoteSummary(summary), 'Miss, no input')
 })
 
+test('keeps unchanged note feedback while excluding an edited note revision', () => {
+  const run = withJudgements([
+    judgement({ noteId: 'note-1', occurrenceKey: 'note-1' }),
+    judgement({ id: 'judgement-2', noteId: 'note-2', occurrenceKey: 'note-2', noteRevisionKey: 'note-v1:snare:2000:tap', noteSnapshot: { impactTimeMs: 2000, lane: 'snare' }, lane: 'snare', noteTimeMs: 2000 }),
+  ])
+  const current = filterCurrentNoteRevisions(summarizeRunNotes(run), [
+    { id: 'note-1', impactTimeMs: 1010, lane: 'kick' },
+    { id: 'note-2', impactTimeMs: 2000, lane: 'snare' },
+  ])
+  assert.equal(current.has('note-1'), false)
+  assert.equal(current.has('note-2'), true)
+})
+
+test('revisions change only for gameplay-relevant note configuration', () => {
+  const original = { impactTimeMs: 1000, lane: 'kick' as const, durationMs: undefined, strength: 1 }
+  assert.equal(createNoteRevisionKey(original), createNoteRevisionKey({ ...original, strength: 3 }))
+  assert.notEqual(createNoteRevisionKey(original), createNoteRevisionKey({ ...original, impactTimeMs: 1010 }))
+  assert.notEqual(createNoteRevisionKey(original), createNoteRevisionKey({ ...original, lane: 'snare' }))
+  assert.notEqual(createNoteRevisionKey(original), createNoteRevisionKey({ ...original, durationMs: 250 }))
+})
+
+test('normalizes harmless floating-point noise in revision keys', () => {
+  assert.equal(
+    createNoteRevisionKey({ impactTimeMs: 1000.00001, lane: 'kick' }),
+    createNoteRevisionKey({ impactTimeMs: 1000.00002, lane: 'kick' }),
+  )
+})
+
 test('describes signed timing direction', () => {
-  assert.equal(describeRunNoteSummary({ noteId: 'a', occurrenceKey: 'a', lane: 'mid', noteTimeMs: 0, grade: 'good', deltaMs: -24.4 }), 'Good, 24ms early')
-  assert.equal(describeRunNoteSummary({ noteId: 'b', occurrenceKey: 'b', lane: 'mid', noteTimeMs: 0, grade: 'late', deltaMs: 17.8 }), 'Late, 18ms late')
+  const summary = (overrides: Partial<RunNoteSummary>): RunNoteSummary => ({
+    noteId: 'a',
+    noteRevisionKey: 'note-v1:mid:0:tap',
+    noteSnapshot: { impactTimeMs: 0, lane: 'mid' },
+    occurrenceKey: 'a',
+    lane: 'mid',
+    noteTimeMs: 0,
+    grade: 'good',
+    deltaMs: -24.4,
+    ...overrides,
+  })
+  assert.equal(describeRunNoteSummary(summary({})), 'Good, 24ms early')
+  assert.equal(describeRunNoteSummary(summary({ noteId: 'b', occurrenceKey: 'b', grade: 'late', deltaMs: 17.8 })), 'Late, 18ms late')
 })
