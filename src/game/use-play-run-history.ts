@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { RunHistoryRepository } from '../storage/run-history-repository'
 import type { Attack, Beatmap } from './model'
-import { aggregateNoteFeedback, type NoteFeedbackAggregate } from './run-feedback-aggregation'
+import { aggregateNoteFeedback, summarizeFeedbackAggregates, summarizeLatestRunFeedback } from './run-feedback-aggregation'
 import { createNoteRevisionKey, createPlayRun, createRunNoteSnapshot, type PlayRun, type RunNoteJudgement } from './run-history'
 import type { ParryGrade } from './timing'
 
@@ -25,29 +25,6 @@ type UsePlayRunHistoryOptions = {
 }
 
 const sortRuns = (runs: PlayRun[]) => runs.toSorted((a, b) => a.startedAt.localeCompare(b.startedAt))
-
-function summarizeFeedback(aggregates: ReadonlyMap<string, NoteFeedbackAggregate>) {
-  const summary = {
-    notesWithFeedback: aggregates.size,
-    repeatedIssues: 0,
-    consistentlyEarly: 0,
-    consistentlyLate: 0,
-    mixedTiming: 0,
-    perfectNotes: 0,
-    goodNotes: 0,
-    needsWorkNotes: 0,
-  }
-  aggregates.forEach((aggregate) => {
-    if (aggregate.direction === 'early') summary.consistentlyEarly += 1
-    if (aggregate.direction === 'late') summary.consistentlyLate += 1
-    if (aggregate.direction === 'mixed') summary.mixedTiming += 1
-    if (aggregate.attemptCount >= 3 && (aggregate.direction === 'early' || aggregate.direction === 'late' || aggregate.direction === 'mixed' || aggregate.direction === 'no-input' || aggregate.missRate >= 0.3)) summary.repeatedIssues += 1
-    if (aggregate.latestResult.grade === 'perfect') summary.perfectNotes += 1
-    else if (aggregate.latestResult.grade === 'good') summary.goodNotes += 1
-    else summary.needsWorkNotes += 1
-  })
-  return summary
-}
 
 export function usePlayRunHistory({ songId, beatmap, bpm, beatOffsetMs, enabled, repository }: UsePlayRunHistoryOptions) {
   const [runs, setRuns] = useState<PlayRun[]>([])
@@ -190,13 +167,15 @@ export function usePlayRunHistory({ songId, beatmap, bpm, beatOffsetMs, enabled,
   const noteFeedbackAggregates = useMemo(() => aggregateNoteFeedback(matchingRuns, beatmap?.notes ?? []), [beatmap?.notes, matchingRuns])
   const lastRunFeedbackAggregates = useMemo(() => aggregateNoteFeedback(lastRun ? [lastRun] : [], beatmap?.notes ?? []), [beatmap?.notes, lastRun])
   const displayedFeedbackAggregates = showLastRunOnly ? lastRunFeedbackAggregates : noteFeedbackAggregates
-  const feedbackSummary = useMemo(() => summarizeFeedback(displayedFeedbackAggregates), [displayedFeedbackAggregates])
+  const feedbackSummary = useMemo(() => summarizeFeedbackAggregates(noteFeedbackAggregates), [noteFeedbackAggregates])
+  const lastRunFeedbackSummary = useMemo(() => summarizeLatestRunFeedback(lastRunFeedbackAggregates), [lastRunFeedbackAggregates])
 
   return {
     runs,
     lastRun,
     displayedFeedbackAggregates,
     feedbackSummary,
+    lastRunFeedbackSummary,
     showLastRunOnly,
     setShowLastRunOnly,
     storageError,

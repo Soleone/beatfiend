@@ -3,17 +3,27 @@ import { createPortal } from 'react-dom'
 import type { NoteFeedbackAggregate } from '../game/run-feedback-aggregation'
 import { describeRunNoteSummary } from '../game/run-history'
 
-export type RunFeedbackQuality = 'perfect' | 'successful' | 'problem' | 'muted'
+export type RunFeedbackQuality = 'perfect' | 'successful' | 'problem'
 
-function markerQuality(aggregate: NoteFeedbackAggregate): RunFeedbackQuality {
-  if (aggregate.attemptCount < 3) return 'muted'
+function markerQuality(aggregate: NoteFeedbackAggregate, latestRunOnly: boolean): RunFeedbackQuality {
+  if (latestRunOnly) {
+    if (aggregate.latestResult.grade === 'perfect') return 'perfect'
+    return aggregate.latestResult.grade === 'good' ? 'successful' : 'problem'
+  }
   if (aggregate.noInputMissCount / aggregate.attemptCount >= 0.5 || aggregate.missRate >= 0.3) return 'problem'
   if (aggregate.perfectRate >= 0.6) return 'perfect'
   if (aggregate.successRate >= 0.7) return 'successful'
   return 'problem'
 }
 
-function markerGlyph(aggregate: NoteFeedbackAggregate) {
+function markerGlyph(aggregate: NoteFeedbackAggregate, latestRunOnly: boolean) {
+  if (latestRunOnly) {
+    if (aggregate.latestResult.grade === 'perfect') return '✓'
+    if (aggregate.latestResult.deltaMs === null) return '×'
+    if (aggregate.latestResult.deltaMs < 0) return '←'
+    if (aggregate.latestResult.deltaMs > 0) return '→'
+    return '•'
+  }
   if (aggregate.direction === 'early') return '←'
   if (aggregate.direction === 'late') return '→'
   if (aggregate.direction === 'mixed') return '↔'
@@ -46,14 +56,16 @@ function stopPointerEvent(event: PointerEvent<HTMLButtonElement> | MouseEvent<HT
   event.stopPropagation()
 }
 
-export const RunFeedbackMarker = memo(function RunFeedbackMarker({ aggregate, left }: { aggregate: NoteFeedbackAggregate; left: string }) {
+export const RunFeedbackMarker = memo(function RunFeedbackMarker({ aggregate, left, latestRunOnly }: { aggregate: NoteFeedbackAggregate; left: string; latestRunOnly: boolean }) {
   const detailId = useId()
   const triggerRef = useRef<HTMLButtonElement>(null)
   const [open, setOpen] = useState(false)
   const [position, setPosition] = useState({ left: 0, top: 0, above: false })
-  const quality = markerQuality(aggregate)
-  const glyph = markerGlyph(aggregate)
-  const ariaLabel = `${aggregate.attemptCount} ${aggregate.attemptCount === 1 ? 'attempt' : 'attempts'} across ${aggregate.runCount} ${aggregate.runCount === 1 ? 'run' : 'runs'}. ${aggregate.direction} timing, ${aggregate.confidence} confidence. Latest ${describeRunNoteSummary(aggregate.latestResult)}.`
+  const quality = markerQuality(aggregate, latestRunOnly)
+  const glyph = markerGlyph(aggregate, latestRunOnly)
+  const ariaLabel = latestRunOnly
+    ? `Latest run. ${describeRunNoteSummary(aggregate.latestResult)}.${aggregate.attemptCount > 1 ? ` ${aggregate.attemptCount} occurrences in this run.` : ''}`
+    : `${aggregate.attemptCount} ${aggregate.attemptCount === 1 ? 'attempt' : 'attempts'} across ${aggregate.runCount} ${aggregate.runCount === 1 ? 'run' : 'runs'}. ${aggregate.direction} timing, ${aggregate.confidence} confidence. Latest ${describeRunNoteSummary(aggregate.latestResult)}.`
 
   useEffect(() => {
     if (!open) return
@@ -94,7 +106,7 @@ export const RunFeedbackMarker = memo(function RunFeedbackMarker({ aggregate, le
       <button
         ref={triggerRef}
         type="button"
-        className={`timeline-run-feedback timeline-run-feedback--${quality} timeline-run-feedback--confidence-${aggregate.confidence}`}
+        className={`timeline-run-feedback timeline-run-feedback--${quality} timeline-run-feedback--confidence-${aggregate.confidence}${latestRunOnly ? ' timeline-run-feedback--latest' : ''}`}
         style={{ left }}
         aria-label={ariaLabel}
         aria-describedby={open ? detailId : undefined}
@@ -110,28 +122,41 @@ export const RunFeedbackMarker = memo(function RunFeedbackMarker({ aggregate, le
         onPointerMove={stopPointerEvent}
       >
         <span aria-hidden="true">{glyph}</span>
-        <small aria-hidden="true">{aggregate.attemptCount > 99 ? '99+' : aggregate.attemptCount}</small>
+        {!latestRunOnly ? <small aria-hidden="true">{aggregate.attemptCount > 99 ? '99+' : aggregate.attemptCount}</small> : null}
       </button>
       {open ? createPortal(
         <div
           id={detailId}
           role="tooltip"
-          className={`run-feedback-detail${position.above ? ' run-feedback-detail--above' : ''}`}
+          className={`run-feedback-detail${position.above ? ' run-feedback-detail--above' : ''}${latestRunOnly ? ' run-feedback-detail--latest' : ''}`}
           style={{ left: position.left, top: position.top }}
         >
-          <strong>{aggregate.attemptCount} attempts across {aggregate.runCount} {aggregate.runCount === 1 ? 'run' : 'runs'}</strong>
-          <span className="run-feedback-detail__trend">{aggregate.direction === 'insufficient' ? 'Not enough consistent evidence yet' : `${aggregate.direction} timing`}</span>
-          <dl>
-            <div><dt>Perfect</dt><dd>{aggregate.perfectCount}</dd></div>
-            <div><dt>Good</dt><dd>{aggregate.goodCount}</dd></div>
-            <div><dt>Mistimed miss</dt><dd>{aggregate.mistimedMissCount}</dd></div>
-            <div><dt>No input</dt><dd>{aggregate.noInputMissCount}</dd></div>
-            {aggregate.unresolvedFailureCount > 0 ? <div><dt>Interrupted</dt><dd>{aggregate.unresolvedFailureCount}</dd></div> : null}
-            <div><dt>Typical timing</dt><dd>{timingDescription(aggregate.medianDeltaMs)}</dd></div>
-            <div><dt>Direction</dt><dd>{directionDescription(aggregate)}</dd></div>
-            <div><dt>Consistency</dt><dd>{confidenceDescription(aggregate)}</dd></div>
-            <div><dt>Latest</dt><dd>{describeRunNoteSummary(aggregate.latestResult)}</dd></div>
-          </dl>
+          {latestRunOnly ? (
+            <>
+              <strong>Latest run</strong>
+              <dl>
+                <div><dt>Result</dt><dd>{aggregate.latestResult.grade.charAt(0).toUpperCase() + aggregate.latestResult.grade.slice(1)}</dd></div>
+                <div><dt>Timing</dt><dd>{timingDescription(aggregate.latestResult.deltaMs)}</dd></div>
+                {aggregate.attemptCount > 1 ? <div><dt>Occurrences</dt><dd>{aggregate.attemptCount}</dd></div> : null}
+              </dl>
+            </>
+          ) : (
+            <>
+              <strong>{aggregate.attemptCount} {aggregate.attemptCount === 1 ? 'attempt' : 'attempts'} across {aggregate.runCount} {aggregate.runCount === 1 ? 'run' : 'runs'}</strong>
+              <span className="run-feedback-detail__trend">{aggregate.direction === 'insufficient' ? 'Not enough consistent evidence yet' : `${aggregate.direction} timing`}</span>
+              <dl>
+                <div><dt>Perfect</dt><dd>{aggregate.perfectCount}</dd></div>
+                <div><dt>Good</dt><dd>{aggregate.goodCount}</dd></div>
+                <div><dt>Mistimed miss</dt><dd>{aggregate.mistimedMissCount}</dd></div>
+                <div><dt>No input</dt><dd>{aggregate.noInputMissCount}</dd></div>
+                {aggregate.unresolvedFailureCount > 0 ? <div><dt>Interrupted</dt><dd>{aggregate.unresolvedFailureCount}</dd></div> : null}
+                <div><dt>Typical timing</dt><dd>{timingDescription(aggregate.medianDeltaMs)}</dd></div>
+                <div><dt>Direction</dt><dd>{directionDescription(aggregate)}</dd></div>
+                <div><dt>Consistency</dt><dd>{confidenceDescription(aggregate)}</dd></div>
+                <div><dt>Latest</dt><dd>{describeRunNoteSummary(aggregate.latestResult)}</dd></div>
+              </dl>
+            </>
+          )}
         </div>,
         document.body,
       ) : null}

@@ -33,6 +33,25 @@ export type NoteFeedbackAggregate = {
   latestResult: RunNoteSummary
 }
 
+export type RunFeedbackSummary = {
+  notesWithFeedback: number
+  repeatedIssues: number
+  consistentlyEarly: number
+  consistentlyLate: number
+  mixedTiming: number
+}
+
+export type LastRunFeedbackSummary = {
+  notesWithFeedback: number
+  perfectNotes: number
+  goodNotes: number
+  needsWorkNotes: number
+  earlyNotes: number
+  onTimeNotes: number
+  lateNotes: number
+  noInputNotes: number
+}
+
 type DirectionEvidence = {
   earlyInputCount: number
   lateInputCount: number
@@ -89,6 +108,33 @@ export function classifyNoteFeedback({
   if (lateShare >= DOMINANT_DIRECTION_RATIO && medianDeltaMs > CENTER_DEAD_ZONE_MS) return 'late'
   if (Math.abs(medianDeltaMs) <= CENTER_DEAD_ZONE_MS && medianAbsoluteDeviationMs <= CENTER_DEAD_ZONE_MS) return 'centered'
   return 'mixed'
+}
+
+export function summarizeFeedbackAggregates(aggregates: ReadonlyMap<string, NoteFeedbackAggregate>): RunFeedbackSummary {
+  const summary = { notesWithFeedback: aggregates.size, repeatedIssues: 0, consistentlyEarly: 0, consistentlyLate: 0, mixedTiming: 0 }
+  aggregates.forEach((aggregate) => {
+    if (aggregate.direction === 'early') summary.consistentlyEarly += 1
+    if (aggregate.direction === 'late') summary.consistentlyLate += 1
+    if (aggregate.direction === 'mixed') summary.mixedTiming += 1
+    if (aggregate.attemptCount >= MIN_TREND_ATTEMPTS && (aggregate.direction === 'early' || aggregate.direction === 'late' || aggregate.direction === 'mixed' || aggregate.direction === 'no-input' || aggregate.missRate >= 0.3)) summary.repeatedIssues += 1
+  })
+  return summary
+}
+
+export function summarizeLatestRunFeedback(aggregates: ReadonlyMap<string, NoteFeedbackAggregate>): LastRunFeedbackSummary {
+  const summary = { notesWithFeedback: aggregates.size, perfectNotes: 0, goodNotes: 0, needsWorkNotes: 0, earlyNotes: 0, onTimeNotes: 0, lateNotes: 0, noInputNotes: 0 }
+  aggregates.forEach((aggregate) => {
+    const latest = aggregate.latestResult
+    if (latest.grade === 'perfect') summary.perfectNotes += 1
+    else if (latest.grade === 'good') summary.goodNotes += 1
+    else summary.needsWorkNotes += 1
+
+    if (latest.deltaMs === null) summary.noInputNotes += 1
+    else if (latest.deltaMs < -CENTER_DEAD_ZONE_MS) summary.earlyNotes += 1
+    else if (latest.deltaMs > CENTER_DEAD_ZONE_MS) summary.lateNotes += 1
+    else summary.onTimeNotes += 1
+  })
+  return summary
 }
 
 export function noteFeedbackConfidence(attemptCount: number): NoteFeedbackConfidence {

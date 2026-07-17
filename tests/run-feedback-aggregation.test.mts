@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { aggregateNoteFeedback, classifyNoteFeedback, median, medianAbsoluteDeviation, noteFeedbackConfidence } from '../src/game/run-feedback-aggregation.ts'
+import { aggregateNoteFeedback, classifyNoteFeedback, median, medianAbsoluteDeviation, noteFeedbackConfidence, summarizeFeedbackAggregates, summarizeLatestRunFeedback } from '../src/game/run-feedback-aggregation.ts'
 import { createNoteRevisionKey, type PlayRun, type RunNoteJudgement } from '../src/game/run-history.ts'
 import type { ParryGrade } from '../src/game/timing.ts'
 
@@ -82,6 +82,33 @@ test('classifies confidence from terminal attempt count boundaries', () => {
   assert.equal(noteFeedbackConfidence(3), 'medium')
   assert.equal(noteFeedbackConfidence(5), 'medium')
   assert.equal(noteFeedbackConfidence(6), 'high')
+})
+
+test('summarizes latest-run outcomes and timing without replacing aggregate context', () => {
+  const notes = [
+    currentNote,
+    { id: 'note-2', impactTimeMs: 2000, lane: 'kick' as const },
+    { id: 'note-3', impactTimeMs: 3000, lane: 'kick' as const },
+    { id: 'note-4', impactTimeMs: 4000, lane: 'kick' as const },
+  ]
+  const aggregates = aggregateNoteFeedback([run('run-1', '2026-07-16T00:00:00.000Z', [
+    judgement({ id: 'j1', grade: 'perfect', deltaMs: 0 }),
+    judgement({ id: 'j2', noteId: 'note-2', occurrenceKey: 'note-2', noteRevisionKey: createNoteRevisionKey(notes[1]), noteTimeMs: 2000, grade: 'good', deltaMs: -20 }),
+    judgement({ id: 'j3', noteId: 'note-3', occurrenceKey: 'note-3', noteRevisionKey: createNoteRevisionKey(notes[2]), noteTimeMs: 3000, grade: 'late', deltaMs: 90 }),
+    judgement({ id: 'j4', noteId: 'note-4', occurrenceKey: 'note-4', noteRevisionKey: createNoteRevisionKey(notes[3]), noteTimeMs: 4000, grade: 'miss', deltaMs: null }),
+  ])], notes)
+
+  assert.deepEqual(summarizeLatestRunFeedback(aggregates), {
+    notesWithFeedback: 4,
+    perfectNotes: 1,
+    goodNotes: 1,
+    needsWorkNotes: 2,
+    earlyNotes: 1,
+    onTimeNotes: 1,
+    lateNotes: 1,
+    noInputNotes: 1,
+  })
+  assert.equal(summarizeFeedbackAggregates(aggregates).notesWithFeedback, 4)
 })
 
 test('aggregates every occurrence and distinct run count', () => {
