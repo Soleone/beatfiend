@@ -22,9 +22,11 @@ import { findDueNotes } from './game/note-scheduler'
 import { judgeParryTiming, syncopationAmount, type ParryTimingResult } from './game/timing'
 import { usePlayRunHistory } from './game/use-play-run-history'
 import { runtimeMetrics, type RuntimeMetricsSnapshot } from './performance/runtime-metrics'
+import { readAudioFileDurationMs } from './storage/browser-audio-attachment'
 import { getBrowserAudio, putBrowserAudio, requestPersistentBrowserStorage } from './storage/browser-audio-repository'
 import { createIndexedDbRunHistoryRepository } from './storage/run-history-repository'
 import { createIndexedDBSongPackageRepository } from './storage/song-package-repository'
+import { useBrowserAudioAttachment } from './storage/use-browser-audio-attachment'
 import {
   collectionPercent,
   countNotesByLane,
@@ -174,6 +176,7 @@ function App() {
   const browserAudioUrl = useRef<string | null>(null)
   const audioLoadSequence = useRef(0)
   const localAudioInputRef = useRef<HTMLInputElement>(null)
+  const audioAttachmentInputRef = useRef<HTMLInputElement>(null)
   const libraryImportInputRef = useRef<HTMLInputElement>(null)
   const shareImportInputRef = useRef<HTMLInputElement>(null)
   const [savedEditorSignature, setSavedEditorSignature] = useState<string | null>(null)
@@ -446,6 +449,13 @@ function App() {
     }
   }, [companion, packageRepository, packageToImport, resetEditorHistory, resetGameplayPlayback])
 
+  const { attach: attachLocalAudio, isAttaching: isAttachingAudio, setTargetId: setAudioAttachmentTargetId, targetId: audioAttachmentTargetId } = useBrowserAudioAttachment({
+    loadImport,
+    packageRepository,
+    packageToImport,
+    setStatus: setImportStatus,
+  })
+
   const connectCompanion = useCallback(async ({ pairWhenAvailable = true, timeoutMs = 30_000 } = {}) => {
     const permissionBefore = await companion.permissionState()
     if (permissionBefore === 'denied') {
@@ -494,6 +504,7 @@ function App() {
   }, [companion, connectCompanion])
 
   useEffect(() => { void loadImports() }, [loadImports])
+  useEffect(() => { if (importedSong) setAudioAttachmentTargetId(importedSong.id) }, [importedSong, setAudioAttachmentTargetId])
 
   useEffect(() => () => {
     audioLoadSequence.current += 1
@@ -514,8 +525,9 @@ function App() {
     const song = savedImports.find((item) => item.id === songId)
     if (!song) return
     restoredSongId.current = null
+    setAudioAttachmentTargetId(song.id)
     void loadImport(song)
-  }, [importedSong, loadImport, savedImports])
+  }, [importedSong, loadImport, savedImports, setAudioAttachmentTargetId])
 
   useEffect(() => { localStorage.setItem(storageKey('controls'), JSON.stringify(controls)) }, [controls])
 
@@ -807,14 +819,7 @@ function App() {
         const { audio } = await companion.uploadFile(file)
         await createPackageForAudio(audio)
       } else {
-        const objectUrl = URL.createObjectURL(file)
-        const durationMs = await new Promise<number>((resolve, reject) => {
-          const audioElement = new Audio()
-          audioElement.preload = 'metadata'
-          audioElement.onloadedmetadata = () => resolve(Number.isFinite(audioElement.duration) ? audioElement.duration * 1000 : 0)
-          audioElement.onerror = () => reject(new Error('The browser could not read this audio file'))
-          audioElement.src = objectUrl
-        }).finally(() => URL.revokeObjectURL(objectUrl))
+        const durationMs = await readAudioFileDurationMs(file)
         const audio: CompanionAudio = { audioId: crypto.randomUUID(), title: file.name, durationMs, contentType: file.type || 'application/octet-stream', size: file.size }
         await createPackageForAudio(audio, undefined, file)
         browserStorageIsPersistent = await requestPersistentBrowserStorage()
@@ -1045,11 +1050,12 @@ function App() {
       if (replacementCount > 0 && !window.confirm(`Replace ${replacementCount} existing song package${replacementCount === 1 ? '' : 's'} from this share?`)) return
       await Promise.all(bundle.songs.map((songPackage) => packageRepository.put(songPackage)))
       await loadImports()
-      setImportStatus(`Imported ${bundle.title}: ${bundle.songs.length} song${bundle.songs.length === 1 ? '' : 's'}, audio will be retrieved from each shared source when played`)
+      setAudioAttachmentTargetId(bundle.songs[0].id)
+      setImportStatus(`Imported ${bundle.title}. Attach the matching local audio file to play it on this device.`)
     } catch (error) {
       setImportStatus(error instanceof Error ? `Share import failed: ${error.message}` : 'Share import failed')
     }
-  }, [loadImports, packageRepository])
+  }, [loadImports, packageRepository, setAudioAttachmentTargetId])
 
   const importLibrary = useCallback(async (file: File) => {
     try {
@@ -1551,7 +1557,7 @@ function App() {
   const restartTooltip = 'Restart from beginning'
   const difficultyColor = ['#83ff70', '#4da3ff', '#ffd166', '#ff9f43', '#ff5570'][difficulty - 1] ?? '#83ff70'
   const transport = <div className="transport-bar" aria-label="Transport controls"><Button type="button" variant="ghost" className="transport-icon-button" onClick={(event) => restartSong((event.ctrlKey || event.metaKey) && loopMarkers.startMs !== null)} disabled={!importedSong} title={restartTooltip} tooltip={`${restartTooltip}. Ctrl click restarts from the loop start.`} shortcut="Shift+Space">↺</Button><Button type="button" variant="ghost" className="transport-icon-button" onClick={() => seekRelativeSong(-5000)} disabled={!importedSong} title="Back 5 seconds" tooltip="Back 5 seconds">-5s</Button><Button type="button" className={`transport-play-button ${isSongPlaying ? 'transport-play-button--pause' : 'transport-play-button--play'}`} onClick={isSongPlaying ? pauseSong : playSong} disabled={!importedSong} title={isSongPlaying ? 'Pause' : 'Play'} tooltip={isSongPlaying ? 'Pause' : 'Play'} shortcut="Space">{isSongPlaying ? '⏸' : '▶'}</Button><Button type="button" variant="ghost" className="transport-icon-button" onClick={() => seekRelativeSong(5000)} disabled={!importedSong} title="Forward 5 seconds" tooltip="Forward 5 seconds">+5s</Button>{activeTab === 'editor' && <><span className="transport-divider" /><Button type="button" variant="ghost" size="icon" className={`transport-loop-button transport-loop-button--start ${loopMarkers.startMs !== null ? 'transport-loop-button--active' : ''}`} onClick={() => handleLoopRulerClick(songTimeMs, 'start')} disabled={!importedSong} tooltip={loopMarkers.startMs !== null && Math.abs(loopMarkers.startMs - snapTimelineTime(songTimeMs)) <= Math.max(80, gridMs * 0.45) ? 'Remove loop start' : 'Set loop start at playhead'} shortcut="[" aria-label="Set loop start at playhead"><ArrowLeftToLine /></Button><Button type="button" variant="ghost" size="icon" className={`transport-loop-button transport-loop-button--end ${loopMarkers.endMs !== null ? 'transport-loop-button--active' : ''}`} onClick={() => handleLoopRulerClick(songTimeMs, 'end')} disabled={!importedSong} tooltip={loopMarkers.endMs !== null && Math.abs(loopMarkers.endMs - snapTimelineTime(songTimeMs)) <= Math.max(80, gridMs * 0.45) ? 'Remove loop end' : 'Set loop end at playhead'} shortcut="]" aria-label="Set loop end at playhead"><ArrowRightToLine /></Button><span className="transport-divider" /><Button type="button" variant="ghost" className={`transport-record-button ${isRecording ? 'transport-record-button--active' : ''}`} onClick={isRecording ? stopRecording : startRecording} tooltip={isRecording ? 'Stop recording' : 'Start recording'} aria-label={isRecording ? 'Stop recording' : 'Start recording'}><Circle fill="currentColor" /></Button></>}</div>
-  const beatmapControls = <Card className="beatmap-controls">{savedImports.length > 0 ? <Field><FieldLabel>Song</FieldLabel><Select value={importedSong?.id ?? null} onValueChange={(songId) => { const song = savedImports.find((item) => item.id === songId); if (song && confirmDiscardChanges()) void loadImport(song) }}><SelectTrigger className="ui-select"><SelectValue>{(songId: string | null) => savedImports.find((song) => song.id === songId)?.title ?? 'Select cached song...'}</SelectValue></SelectTrigger><SelectContent>{savedImports.map((song) => <SelectItem key={song.id} value={song.id}>{song.title}</SelectItem>)}</SelectContent></Select></Field> : <p className="editor-hint">No cached songs yet. Use Settings to import from YouTube.</p>}<Field><FieldLabel>Beatmap</FieldLabel><Select value={beatmap?.id ?? null} onValueChange={(beatmapId) => { if (beatmapId && confirmDiscardChanges()) void loadBeatmap(beatmapId) }} disabled={!importedSong || (!beatmap && songBeatmaps.length === 0)}><SelectTrigger className="ui-select"><SelectValue>{(beatmapId: string | null) => { if (beatmap?.id === beatmapId) return `${mapTitle} (${beatmap.notes.length}) ${'★'.repeat(difficulty)}`; const selectedMap = songBeatmaps.find((map) => map.id === beatmapId); if (selectedMap) return `${selectedMap.title} (${selectedMap.noteCount}) ${'★'.repeat(selectedMap.difficulty ?? 1)}`; return songBeatmaps.length || beatmap ? 'Select beatmap...' : 'No beatmaps' }}</SelectValue></SelectTrigger><SelectContent>{beatmap && !songBeatmaps.some((map) => map.id === beatmap.id) && <SelectItem value={beatmap.id}>{mapTitle} (unsaved) {'★'.repeat(difficulty)}</SelectItem>}{songBeatmaps.map((map) => <SelectItem key={map.id} value={map.id}>{map.title} ({map.noteCount}) {'★'.repeat(map.difficulty ?? 1)}</SelectItem>)}</SelectContent></Select></Field></Card>
+  const beatmapControls = <Card className="beatmap-controls">{savedImports.length > 0 ? <Field><FieldLabel>Song</FieldLabel><Select value={importedSong?.id ?? null} onValueChange={(songId) => { const song = savedImports.find((item) => item.id === songId); if (song && confirmDiscardChanges()) { setAudioAttachmentTargetId(song.id); void loadImport(song) } }}><SelectTrigger className="ui-select"><SelectValue>{(songId: string | null) => savedImports.find((song) => song.id === songId)?.title ?? 'Select cached song...'}</SelectValue></SelectTrigger><SelectContent>{savedImports.map((song) => <SelectItem key={song.id} value={song.id}>{song.title}</SelectItem>)}</SelectContent></Select></Field> : <p className="editor-hint">No cached songs yet. Use Settings to import from YouTube.</p>}<input ref={audioAttachmentInputRef} type="file" accept="audio/*,.mp3,.m4a,.aac,.wav,.ogg,.flac" hidden onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void attachLocalAudio(file); event.currentTarget.value = '' }} /><Button type="button" variant="secondary" disabled={!audioAttachmentTargetId || isAttachingAudio} onClick={() => { if (confirmDiscardChanges()) audioAttachmentInputRef.current?.click() }} tooltip="Use a local audio file with this song while preserving its beatmaps and timing"><Upload />{isAttachingAudio ? 'Attaching audio...' : `Attach audio${audioAttachmentTargetId ? ` to ${savedImports.find((song) => song.id === audioAttachmentTargetId)?.title ?? 'song'}` : ''}`}</Button><Field><FieldLabel>Beatmap</FieldLabel><Select value={beatmap?.id ?? null} onValueChange={(beatmapId) => { if (beatmapId && confirmDiscardChanges()) void loadBeatmap(beatmapId) }} disabled={!importedSong || (!beatmap && songBeatmaps.length === 0)}><SelectTrigger className="ui-select"><SelectValue>{(beatmapId: string | null) => { if (beatmap?.id === beatmapId) return `${mapTitle} (${beatmap.notes.length}) ${'★'.repeat(difficulty)}`; const selectedMap = songBeatmaps.find((map) => map.id === beatmapId); if (selectedMap) return `${selectedMap.title} (${selectedMap.noteCount}) ${'★'.repeat(selectedMap.difficulty ?? 1)}`; return songBeatmaps.length || beatmap ? 'Select beatmap...' : 'No beatmaps' }}</SelectValue></SelectTrigger><SelectContent>{beatmap && !songBeatmaps.some((map) => map.id === beatmap.id) && <SelectItem value={beatmap.id}>{mapTitle} (unsaved) {'★'.repeat(difficulty)}</SelectItem>}{songBeatmaps.map((map) => <SelectItem key={map.id} value={map.id}>{map.title} ({map.noteCount}) {'★'.repeat(map.difficulty ?? 1)}</SelectItem>)}</SelectContent></Select></Field></Card>
   const beatmapActions = activeTab === 'editor' ? <Card className="beatmap-actions"><div className="beatmap-action-grid"><Button type="button" variant="secondary" onClick={() => void saveBeatmap(false)} disabled={!beatmap || !importedSong} tooltip="Save changes"><Save />Save</Button><Button type="button" variant="secondary" onClick={createBlankBeatmap} disabled={!importedSong} tooltip="Create an empty beatmap"><FilePlus2 />Create</Button><div className="inline-popover"><Button type="button" variant="secondary" onClick={() => { setRenameDraft(mapTitle); setRenameOpen((open) => !open) }} disabled={!beatmap} tooltip="Rename this beatmap"><Edit3 />Rename</Button>{renameOpen && <div className="inline-popover__panel"><button type="button" className="popover-close" onClick={() => setRenameOpen(false)} aria-label="Close rename dialog"><X /></button><div className="popover-title">Rename beatmap</div><Input value={renameDraft} onChange={(event) => setRenameDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); applyRenameBeatmap(event.currentTarget.value) } }} autoFocus /><div className="popover-actions popover-actions--single"><Button type="button" variant="secondary" size="sm" onClick={() => applyRenameBeatmap()}><Check />Apply</Button></div></div>}</div><Button type="button" variant="secondary" onClick={() => void saveBeatmap(true)} disabled={!beatmap || !importedSong} tooltip="Save a duplicate beatmap"><CopyPlus />Duplicate</Button><div className="inline-popover"><Button type="button" variant="secondary" onClick={() => setDifficultyOpen((open) => !open)} disabled={!beatmap} tooltip={`Difficulty ${difficulty}`} style={{ color: difficultyColor }}><Star fill="currentColor" />Difficulty</Button>{difficultyOpen && <div className="inline-popover__panel"><div className="popover-title">Difficulty</div><Slider min={1} max={5} step={1} value={[difficulty]} onValueChange={(value) => setBeatmapDifficulty(Array.isArray(value) ? value[0] : value)} /><div className="popover-actions"><span style={{ color: difficultyColor }}><Star size={14} fill="currentColor" /> Level {difficulty}</span><Button type="button" variant="secondary" size="sm" onClick={() => setDifficultyOpen(false)}><Check />Done</Button></div></div>}</div><div className="inline-popover"><Button type="button" variant="warning" onClick={() => setDeleteOpen((open) => !open)} disabled={!beatmap || !importedSong || !songBeatmaps.some((map) => map.id === beatmap.id)} tooltip="Delete this saved beatmap"><Trash2 />Delete</Button>{deleteOpen && <div className="inline-popover__panel inline-popover__panel--danger"><button type="button" className="popover-close" onClick={() => setDeleteOpen(false)} aria-label="Close delete confirmation"><X /></button><div className="popover-title">Delete beatmap?</div><p>This removes {mapTitle} from this song.</p><div className="popover-actions popover-actions--single"><Button type="button" variant="warning" size="sm" onClick={() => void deleteBeatmap()}><Trash2 />Delete</Button></div></div>}</div><Button type="button" variant="secondary" onClick={() => void exportSharedBeatmap()} disabled={!beatmap || !importedSong} tooltip="Export this beatmap with its song link and timing"><Download />Export</Button><input ref={shareImportInputRef} type="file" accept="application/json,.json,.beat-fiend.json" hidden onChange={(event) => { const file = event.currentTarget.files?.[0]; if (file) void importSharedBundle(file); event.currentTarget.value = '' }} /><Button type="button" variant="secondary" onClick={() => shareImportInputRef.current?.click()} tooltip="Import a shared Beat Fiend beatmap"><Upload />Import</Button></div><div className="beatmap-secondary-actions"><Button type="button" variant="ghost" onClick={clearBeatmapEvents} disabled={!beatmap} tooltip="Remove all notes from this beatmap"><Edit3 />Wipe notes</Button></div>{tapMode && <p className="editor-hint">Tap tempo is listening for lane keys. Use the main pane's Tap button to save.</p>}</Card> : null
   const judgementText = lastAutoMiss ? 'miss' : lastResult ? lastResult.grade : 'ready'
   const gradeColor = lastAutoMiss ? judgementCssVars.miss : lastResult?.grade === 'perfect' ? judgementCssVars.perfect : lastResult?.grade === 'good' ? judgementCssVars.good : undefined

@@ -32,6 +32,17 @@ export async function putBrowserAudio(id: string, blob: Blob): Promise<void> {
   }
 }
 
+export async function deleteBrowserAudio(id: string): Promise<void> {
+  const database = await openDatabase()
+  try {
+    const transaction = database.transaction(STORE_NAME, 'readwrite')
+    transaction.objectStore(STORE_NAME).delete(id)
+    await completeTransaction(transaction)
+  } finally {
+    database.close()
+  }
+}
+
 export async function requestPersistentBrowserStorage(): Promise<boolean> {
   try {
     return await navigator.storage?.persist?.() ?? false
