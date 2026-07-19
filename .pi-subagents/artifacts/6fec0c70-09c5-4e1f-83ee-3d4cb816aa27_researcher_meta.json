@@ -1,0 +1,108 @@
+{
+  "runId": "6fec0c70-09c5-4e1f-83ee-3d4cb816aa27",
+  "agent": "researcher",
+  "task": "Perform a preliminary naming clearance screen for a kid-friendly rhythm-game and beatmap-editor app. Focus on exact and close uses of BeatLab, SongLab, HitLab, TuneLab, PlayLab, SongForge, JamForge, and BeatForge. For each, check same-market products, music software/hardware, rhythm games, app stores, obvious trademark records/indexes, and domains where practical. Rank collision risk and identify any candidate worth deeper legal clearance. Cite URLs. This is not legal advice. Do not edit project files.\n\n---\n**Output:**\nWrite your findings to exactly this path: /home/soleone/src/products/beatfiend/.pi-subagents/artifacts/outputs/6fec0c70-09c5-4e1f-83ee-3d4cb816aa27/research.md\nThis path is authoritative for this run.\nIgnore any other output filename or output path mentioned elsewhere, including output destinations in the base agent prompt, system prompt, or task instructions.\n\n## Acceptance Contract\nAcceptance level: attested\nCompletion is not accepted from prose alone. End with a structured acceptance report.\n\nCriteria:\n- criterion-1: Return concrete findings with file paths and severity when applicable\n\nRequired evidence: review-findings, residual-risks\n\nFinish with a fenced JSON block tagged `acceptance-report` in this shape:\nUse empty arrays when no items apply; array fields contain strings unless object entries are shown.\n`criteriaSatisfied[].status` must be exactly one of: satisfied, not-satisfied, not-applicable.\n`commandsRun[].result` must be exactly one of: passed, failed, not-run.\n`manualNotes` and `notes` are optional strings; an empty string means no note and does not satisfy `manual-notes` evidence.\n```acceptance-report\n{\n  \"criteriaSatisfied\": [\n    {\n      \"id\": \"criterion-1\",\n      \"status\": \"satisfied\",\n      \"evidence\": \"specific proof\"\n    }\n  ],\n  \"changedFiles\": [\n    \"src/file.ts\"\n  ],\n  \"testsAddedOrUpdated\": [\n    \"test/file.test.ts\"\n  ],\n  \"commandsRun\": [\n    {\n      \"command\": \"command\",\n      \"result\": \"passed\",\n      \"summary\": \"short result\"\n    }\n  ],\n  \"validationOutput\": [\n    \"validation output or concise summary\"\n  ],\n  \"residualRisks\": [\n    \"none\"\n  ],\n  \"noStagedFiles\": true,\n  \"diffSummary\": \"short description of the diff\",\n  \"reviewFindings\": [\n    \"blocker: file.ts:12 - issue found, or no blockers\"\n  ],\n  \"manualNotes\": \"anything else the parent should know\"\n}\n```",
+  "exitCode": 0,
+  "model": "openai-codex/gpt-5.6-sol:medium",
+  "attemptedModels": [
+    "openai-codex/gpt-5.6-sol:medium"
+  ],
+  "modelAttempts": [
+    {
+      "model": "openai-codex/gpt-5.6-sol:medium",
+      "success": true,
+      "exitCode": 0,
+      "usage": {
+        "input": 40676,
+        "output": 5509,
+        "cacheRead": 141312,
+        "cacheWrite": 0,
+        "cost": 0.439306,
+        "turns": 11
+      }
+    }
+  ],
+  "acceptance": {
+    "status": "attested",
+    "explicit": true,
+    "effectiveAcceptance": {
+      "level": "attested",
+      "explicit": true,
+      "inferredReason": [
+        "read-only/reviewer-style agent"
+      ],
+      "criteria": [
+        {
+          "id": "criterion-1",
+          "must": "Return concrete findings with file paths and severity when applicable",
+          "evidence": [
+            "review-findings",
+            "residual-risks"
+          ],
+          "severity": "required"
+        }
+      ],
+      "evidence": [
+        "review-findings",
+        "residual-risks"
+      ],
+      "verify": [],
+      "stopRules": []
+    },
+    "inferredReason": [
+      "read-only/reviewer-style agent"
+    ],
+    "criteria": [
+      {
+        "id": "criterion-1",
+        "must": "Return concrete findings with file paths and severity when applicable",
+        "evidence": [
+          "review-findings",
+          "residual-risks"
+        ],
+        "severity": "required"
+      }
+    ],
+    "runtimeChecks": [],
+    "verifyRuns": [],
+    "childReport": {
+      "criteriaSatisfied": [
+        {
+          "id": "criterion-1",
+          "status": "satisfied",
+          "evidence": "The artifact ranks all eight names by severity, provides cited collision findings, and documents residual legal and search risks."
+        }
+      ],
+      "changedFiles": [
+        "/home/soleone/src/products/beatfiend/.pi-subagents/artifacts/outputs/6fec0c70-09c5-4e1f-83ee-3d4cb816aa27/research.md"
+      ],
+      "testsAddedOrUpdated": [],
+      "commandsRun": [
+        {
+          "command": "Focused web searches and source fetches",
+          "result": "passed",
+          "summary": "Screened music products, games, app stores, trademark indexes, and domains."
+        }
+      ],
+      "validationOutput": [
+        "All requested candidates were individually assessed.",
+        "Only the required research artifact was written."
+      ],
+      "residualRisks": [
+        "This is preliminary research, not legal advice or comprehensive trademark clearance.",
+        "Official trademark status and bare-domain availability require further verification."
+      ],
+      "noStagedFiles": true,
+      "diffSummary": "Added the requested naming-clearance research artifact.",
+      "reviewFindings": [
+        "critical: SongForge, BeatForge, BeatLab, and SongLab have direct same-market collisions.",
+        "high-to-critical: JamForge has exact music-service and software uses.",
+        "high: TuneLab, HitLab, and PlayLab have material adjacent-market conflicts."
+      ],
+      "manualNotes": "None of the eight names is recommended for adoption; PlayLab is merely the least directly conflicting and still requires lawyer-led clearance."
+    }
+  },
+  "transcriptPath": "/home/soleone/src/products/beatfiend/.pi-subagents/artifacts/6fec0c70-09c5-4e1f-83ee-3d4cb816aa27_researcher_transcript.jsonl",
+  "skills": [],
+  "timestamp": 1784429731469
+}
