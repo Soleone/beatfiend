@@ -2,8 +2,9 @@ import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import electronUpdater from 'electron-updater'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { mkdir } from 'node:fs/promises'
 import { DEFAULT_PORT } from '../companion/server.js'
-import { startCompanion } from '../companion/index.js'
+import { defaultDataDir, startCompanion } from '../companion/index.js'
 import { VIBESTEP_WEB_URL } from '../companion/config.js'
 import { formatUpdateError } from './update-errors.js'
 import { brandConfig, companionName } from '../brand.config.js'
@@ -29,6 +30,18 @@ function publishStatus(next) {
 
 function openWebApp(pair = false) {
   void shell.openExternal(pair ? pairingUrl : VIBESTEP_WEB_URL)
+}
+
+async function openAudioFolder() {
+  const audioDir = path.join(defaultDataDir(process.platform, process.env), 'audio')
+  try {
+    await mkdir(audioDir, { recursive: true })
+    const error = await shell.openPath(audioDir)
+    if (error) throw new Error(error)
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    await dialog.showMessageBox(mainWindow, { type: 'error', title: 'Could not open audio folder', message: 'The companion could not open its audio folder.', detail })
+  }
 }
 
 function createWindow() {
@@ -68,6 +81,7 @@ function configureUpdater() {
 ipcMain.handle('get-status', () => status)
 ipcMain.handle('open-app', () => openWebApp(false))
 ipcMain.handle('pair', () => openWebApp(true))
+ipcMain.handle('open-audio-folder', () => openAudioFolder())
 ipcMain.handle('check-updates', () => app.isPackaged ? autoUpdater.checkForUpdates() : publishStatus({ update: 'Updates are available in packaged builds.' }))
 ipcMain.handle('install-update', () => { if (status.updateReady) autoUpdater.quitAndInstall(false, true) })
 ipcMain.handle('quit', () => { app.isQuitting = true; app.quit() })
